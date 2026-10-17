@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Trading PWA - 11 Indicadores</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body {
+            touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
+            overflow: hidden;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen w-screen flex flex-col justify-between">
+
+    <!-- 1. CABECERA DE CONTROLES -->
+    <header class="bg-slate-900 border-b border-slate-800 p-2.5 flex flex-col space-y-2 shrink-0">
+        <!-- Fila 1: Activo 1 y Modo Comparación -->
+        <div class="flex items-center justify-between space-x-2">
+            <div class="flex items-center space-x-2 flex-1">
+                <span class="text-[10px] uppercase font-bold text-slate-400">Activo 1:</span>
+                <input id="inputAsset1" type="text" placeholder="Ej: AAPL, BTC-USD..." class="bg-slate-800 text-xs text-blue-400 font-bold py-1 px-2.5 rounded border border-slate-700 w-full uppercase focus:outline-none focus:border-blue-500">
+            </div>
+
+            <button id="btnToggleCompare" class="bg-slate-800 text-xs font-semibold px-3 py-1 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
+                Comparar: OFF
+            </button>
+        </div>
+
+        <!-- Fila 2: Activo 2 (Condicional) y Base 100 -->
+        <div id="compareRow" class="flex items-center justify-between pt-1 border-t border-slate-800/80 hidden space-x-2">
+            <div class="flex items-center space-x-2 flex-1">
+                <span class="text-[10px] uppercase font-bold text-amber-500">Activo 2:</span>
+                <input id="inputAsset2" type="text" placeholder="Ej: TSLA, MSFT..." class="bg-slate-800 text-xs text-amber-500 font-bold py-1 px-2.5 rounded border border-slate-700 w-full uppercase focus:outline-none focus:border-amber-500">
+            </div>
+
+            <button id="btnBase100" class="bg-slate-800 text-[10px] font-semibold px-2.5 py-1 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
+                Base 100: OFF
+            </button>
+        </div>
+    </header>
+
+    <!-- 2. ÁREA DE GRÁFICOS (MULTI-PANEL DINÁMICO) -->
+    <main class="flex-1 w-full relative bg-slate-950 flex flex-col overflow-hidden">
+        <!-- Gráfico Principal (Velas, Precios, Overlays) -->
+        <div id="main-chart-container" class="w-full flex-1 relative"></div>
+        
+        <!-- Subpanel RSI -->
+        <div id="rsi-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
+        
+        <!-- Subpanel MACD -->
+        <div id="macd-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
+
+        <!-- Subpanel OBV -->
+        <div id="obv-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
+
+        <!-- Subpanel Estocástico -->
+        <div id="stoch-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
+
+        <!-- Subpanel ATR -->
+        <div id="atr-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
+
+        <!-- Leyenda Flotante -->
+        <div class="absolute top-2 left-2 pointer-events-none bg-slate-900/80 backdrop-blur-md px-2.5 py-1.5 rounded text-[10px] text-slate-400 border border-slate-800/50 z-10">
+            <span id="legendInfo">Introduce un activo para comenzar</span>
+        </div>
+
+        <!-- Indicador de Carga y Reloj -->
+        <div id="loadingOverlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 z-50 hidden">
+            <div class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="text-xs font-mono text-slate-300 flex items-center space-x-1">
+                <span>Cargando datos...</span>
+                <span id="timerCount" class="text-blue-400 font-bold">0.0s</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- 3. FOOTER / 11 INDICADORES TÁCTILES -->
+    <footer class="h-16 bg-slate-900 border-t border-slate-800 px-3 flex items-center overflow-x-auto space-x-2 shrink-0 no-scrollbar">
+        <button data-indicator="bollinger" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            Bollinger
+        </button>
+        <button data-indicator="fibonacci" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            Fibonacci Auto
+        </button>
+        <button data-indicator="sma200" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            SMA 200
+        </button>
+        <button data-indicator="ema50" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            EMA 50
+        </button>
+        <button data-indicator="vwap" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            VWAP
+        </button>
+        <button data-indicator="sar" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            Parabolic SAR
+        </button>
+        <button data-indicator="rsi" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            RSI (14)
+        </button>
+        <button data-indicator="macd" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            MACD
+        </button>
+        <button data-indicator="obv" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            OBV
+        </button>
+        <button data-indicator="stoch" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            Estocástico
+        </button>
+        <button data-indicator="atr" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
+            ATR (14)
+        </button>
+        <button id="btnRefresh" class="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap shadow transition">
+            Buscar / Actualizar
+        </button>
+    </footer>
+
+    <!-- LÓGICA DE LA APLICACIÓN -->
+    <script>
+        let isComparing = false;
+        let isBase100 = false;
+        let activeFibLines = [];
+        let timerInterval = null;
+        let startTime = 0;
+        let cachedRawData = [];
+
+        // 1. Gráfico Principal
+        const mainContainer = document.getElementById('main-chart-container');
+        const mainChart = LightweightCharts.createChart(mainContainer, {
+            width: mainContainer.clientWidth,
+            height: mainContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+            timeScale: { borderColor: '#1e293b', timeVisible: true }
+        });
+
+        let mainSeries = mainChart.addCandlestickSeries({
+            upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+        });
+        
+        let lineSeries1 = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, title: 'Activo 1' });
+        let compSeries = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, title: 'Activo 2' });
+        let smaSeries = mainChart.addLineSeries({ color: '#60a5fa', lineWidth: 1.5, title: 'SMA 200' });
+        let emaSeries = mainChart.addLineSeries({ color: '#e879f9', lineWidth: 1.5, title: 'EMA 50' });
+        let vwapSeries = mainChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: 'VWAP' });
+        let sarSeries = mainChart.addLineSeries({ color: '#facc15', lineWidth: 0, pointMarkersVisible: true, pointMarkersRadius: 2, title: 'Parabolic SAR' });
+        let bollingerUpper = mainChart.addLineSeries({ color: 'rgba(148, 163, 184, 0.4)', lineWidth: 1 });
+        let bollingerLower = mainChart.addLineSeries({ color: 'rgba(148, 163, 184, 0.4)', lineWidth: 1 });
+
+        // 2. Subpanel RSI
+        const rsiContainer = document.getElementById('rsi-chart-container');
+        const rsiChart = LightweightCharts.createChart(rsiContainer, {
+            width: rsiContainer.clientWidth, height: rsiContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+            timeScale: { borderColor: '#1e293b', visible: false }
+        });
+        let rsiSeries = rsiChart.addLineSeries({ color: '#a855f7', lineWidth: 1.5, title: 'RSI' });
+        rsiSeries.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
+        rsiSeries.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
+
+        // 3. Subpanel MACD
+        const macdContainer = document.getElementById('macd-chart-container');
+        const macdChart = LightweightCharts.createChart(macdContainer, {
+            width: macdContainer.clientWidth, height: macdContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+            timeScale: { borderColor: '#1e293b', visible: false }
+        });
+        let macdLineSeries = macdChart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, title: 'MACD' });
+        let macdSignalSeries = macdChart.addLineSeries({ color: '#f97316', lineWidth: 1.5, title: 'Signal' });
+        let macdHistSeries = macdChart.addHistogramSeries({ title: 'Histograma' });
+
+        // 4. Subpanel OBV
+        const obvContainer = document.getElementById('obv-chart-container');
+        const obvChart = LightweightCharts.createChart(obvContainer, {
+            width: obvContainer.clientWidth, height: obvContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+            timeScale: { borderColor: '#1e293b', visible: false }
+        });
+        let obvSeries = obvChart.addLineSeries({ color: '#10b981', lineWidth: 1.5, title: 'OBV' });
+
+        // 5. Subpanel Estocástico
+        const stochContainer = document.getElementById('stoch-chart-container');
+        const stochChart = LightweightCharts.createChart(stochContainer, {
+            width: stochContainer.clientWidth, height: stochContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+            timeScale: { borderColor: '#1e293b', visible: false }
+        });
+        let stochKSeries = stochChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: '%K' });
+        let stochDSeries = stochChart.addLineSeries({ color: '#f43f5e', lineWidth: 1.5, title: '%D' });
+        stochKSeries.createPriceLine({ price: 80, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
+        stochKSeries.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
+
+        // 6. Subpanel ATR
+        const atrContainer = document.getElementById('atr-chart-container');
+        const atrChart = LightweightCharts.createChart(atrContainer, {
+            width: atrContainer.clientWidth, height: atrContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+            timeScale: { borderColor: '#1e293b', visible: false }
+        });
+        let atrSeries = atrChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5, title: 'ATR' });
+
+        // Sincronización de escalas temporales entre paneles
+        mainChart.timeScale().subscribeVisibleTimeRangeChange(range => {
+            if (!range) return;
+            rsiChart.timeScale().setVisibleTimeRange(range);
+            macdChart.timeScale().setVisibleTimeRange(range);
+            obvChart.timeScale().setVisibleTimeRange(range);
+            stochChart.timeScale().setVisibleTimeRange(range);
+            atrChart.timeScale().setVisibleTimeRange(range);
+        });
+
+        // Control del Reloj
+        function startTimer() {
+            stopTimer();
+            startTime = Date.now();
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            timerInterval = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                document.getElementById('timerCount').innerText = `${elapsed}s`;
+            }, 100);
+        }
+
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = null;
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        // Descarga de Datos Yahoo Finance / Fallback
+        async function fetchYahooData(ticker, forceRefresh = false) {
+            if (!ticker) return [];
+            
+            const cacheKey = `market_real_${ticker.toUpperCase()}`;
+            const cached = localStorage.getItem(cacheKey);
+            
+            if (!forceRefresh && cached) {
+                const { data, timestamp } = JSON.parse(cached);
+                if (Date.now() - timestamp < 4 * 3600 * 1000) return data;
+            }
+
+            try {
+                const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1y&interval=1d`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch(proxyUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                
+                const json = await response.json();
+                const contents = JSON.parse(json.contents);
+                
+                const result = contents.chart.result[0];
+                const timestamps = result.timestamp;
+                const quotes = result.indicators.quote[0];
+
+                let formattedData = [];
+                for (let i = 0; i < timestamps.length; i++) {
+                    if (quotes.close[i] !== null && quotes.open[i] !== null) {
+                        let dateStr = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
+                        formattedData.push({
+                            time: dateStr,
+                            open: parseFloat(quotes.open[i].toFixed(2)),
+                            high: parseFloat(quotes.high[i].toFixed(2)),
+                            low: parseFloat(quotes.low[i].toFixed(2)),
+                            close: parseFloat(quotes.close[i].toFixed(2)),
+                            volume: quotes.volume && quotes.volume[i] !== null ? quotes.volume[i] : 1000000
+                        });
+                    }
+                }
+
+                if (formattedData.length > 0) {
+                    localStorage.setItem(cacheKey, JSON.stringify({ data: formattedData, timestamp: Date.now() }));
+                    return formattedData;
+                }
+                throw new Error("Sin datos");
+            } catch (error) {
+                console.warn("Usando datos de prueba para:", ticker);
+                return generateFallbackData(ticker);
+            }
+        }
+
+        function generateFallbackData(ticker) {
+            let data = [];
+            let price = 100;
+            let date = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+            for (let i = 0; i < 365; i++) {
+                date.setDate(date.getDate() + 1);
+                price += (Math.random() - 0.48) * 2;
+                data.push({
+                    time: date.toISOString().split('T')[0],
+                    open: parseFloat((price - 1).toFixed(2)),
+                    high: parseFloat((price + 2).toFixed(2)),
+                    low: parseFloat((price - 2).toFixed(2)),
+                    close: parseFloat(price.toFixed(2)),
+                    volume: Math.floor(Math.random() * 5000000) + 500000
+                });
+            }
+            return data;
+        }
+
+        // Actualizar Gráfico
+        async function updateChart(forceRefresh = false) {
+            const t1 = document.getElementById('inputAsset1').value.trim().toUpperCase();
+            const t2 = document.getElementById('inputAsset2').value.trim().toUpperCase();
+
+            if (!t1) {
+                document.getElementById('legendInfo').innerText = "Introduce un activo para comenzar";
+                mainSeries.setData([]);
+                lineSeries1.setData([]);
+                compSeries.setData([]);
+                cachedRawData = [];
+                recalculateIndicators([]);
+                return;
+            }
+
+            startTimer();
+
+            try {
+                let data1 = await fetchYahooData(t1, forceRefresh);
+                cachedRawData = data1;
+                let data2 = (isComparing && t2) ? await fetchYahooData(t2, forceRefresh) : [];
+
+                if (!isComparing) {
+                    lineSeries1.setData([]);
+                    compSeries.setData([]);
+                    mainSeries.applyOptions({ visible: true });
+                    mainSeries.setData(data1);
+
+                    const lastVal = data1[data1.length - 1].close;
+                    document.getElementById('legendInfo').innerText = `${t1}: $${lastVal}`;
+                    recalculateIndicators(data1);
+                } else {
+                    recalculateIndicators([]);
+                    clearFibonacci();
+
+                    if (!data2 || data2.length === 0) {
+                        document.getElementById('legendInfo').innerText = `Introduce el Activo 2`;
+                        stopTimer();
+                        return;
+                    }
+
+                    if (isBase100) {
+                        mainSeries.setData([]);
+                        const base1 = data1[0].close;
+                        const base2 = data2[0].close;
+
+                        const norm1 = data1.map(d => ({ time: d.time, value: (d.close / base1) * 100 }));
+                        const norm2 = data2.map(d => ({ time: d.time, value: (d.close / base2) * 100 }));
+
+                        lineSeries1.setData(norm1);
+                        compSeries.setData(norm2);
+                        document.getElementById('legendInfo').innerText = `Base 100 (${t1} vs ${t2})`;
+                    } else {
+                        mainSeries.setData([]);
+                        const lData1 = data1.map(d => ({ time: d.time, value: d.close }));
+                        const lData2 = data2.map(d => ({ time: d.time, value: d.close }));
+
+                        lineSeries1.setData(lData1);
+                        compSeries.setData(lData2);
+
+                        const last1 = data1[data1.length - 1].close;
+                        const last2 = data2[data2.length - 1].close;
+                        document.getElementById('legendInfo').innerText = `${t1}: $${last1} | ${t2}: $${last2}`;
+                    }
+                }
+            } finally {
+                stopTimer();
+                resizeCharts();
+            }
+        }
+
+        // Cálculo de los 11 Indicadores
+        function recalculateIndicators(data) {
+            if (isComparing || !data || data.length === 0) {
+                smaSeries.setData([]);
+                emaSeries.setData([]);
+                vwapSeries.setData([]);
+                sarSeries.setData([]);
+                bollingerUpper.setData([]);
+                bollingerLower.setData([]);
+                rsiSeries.setData([]);
+                macdLineSeries.setData([]);
+                macdSignalSeries.setData([]);
+                macdHistSeries.setData([]);
+                obvSeries.setData([]);
+                stochKSeries.setData([]);
+                stochDSeries.setData([]);
+                atrSeries.setData([]);
+                clearFibonacci();
+                return;
+            }
+
+            // 1. SMA 200
+            if (document.querySelector('[data-indicator="sma200"]').classList.contains('bg-blue-600')) {
+                let smaData = [];
+                for (let i = 199; i < data.length; i++) {
+                    let sum = 0;
+                    for (let j = i - 199; j <= i; j++) sum += data[j].close;
+                    smaData.push({ time: data[i].time, value: sum / 200 });
+                }
+                smaSeries.setData(smaData);
+            } else { smaSeries.setData([]); }
+
+            // 2. EMA 50
+            if (document.querySelector('[data-indicator="ema50"]').classList.contains('bg-blue-600')) {
+                let emaData = [];
+                let k = 2 / (50 + 1);
+                let prevEma = data[0].close;
+                for (let i = 0; i < data.length; i++) {
+                    let ema = (data[i].close * k) + (prevEma * (1 - k));
+                    prevEma = ema;
+                    if (i >= 49) emaData.push({ time: data[i].time, value: ema });
+                }
+                emaSeries.setData(emaData);
+            } else { emaSeries.setData([]); }
+
+            // 3. VWAP
+            if (document.querySelector('[data-indicator="vwap"]').classList.contains('bg-blue-600')) {
+                let vwapData = [];
+                let cumulativeTPV = 0, cumulativeVol = 0;
+                for (let i = 0; i < data.length; i++) {
+                    let typicalPrice = (data[i].high + data[i].low + data[i].close) / 3;
+                    cumulativeTPV += typicalPrice * data[i].volume;
+                    cumulativeVol += data[i].volume;
+                    vwapData.push({ time: data[i].time, value: cumulativeTPV / (cumulativeVol || 1) });
+                }
+                vwapSeries.setData(vwapData);
+            } else { vwapSeries.setData([]); }
+
+            // 4. Parabolic SAR
+            if (document.querySelector('[data-indicator="sar"]').classList.contains('bg-blue-600')) {
+                let sarData = [];
+                if (data.length > 1) {
+                    let isRising = data[1].close >= data[0].close;
+                    let sar = isRising ? data[0].low : data[0].high;
+                    let ep = isRising ? data[0].high : data[0].low;
+                    let af = 0.02;
+
+                    for (let i = 1; i < data.length; i++) {
+                        sar = sar + af * (ep - sar);
+                        if (isRising) {
+                            if (data[i].low < sar) {
+                                isRising = false;
+                                sar = ep;
+                                ep = data[i].low;
+                                af = 0.02;
+                            } else {
+                                if (data[i].high > ep) {
+                                    ep = data[i].high;
+                                    af = Math.min(af + 0.02, 0.2);
+                                }
+                            }
+                        } else {
+                            if (data[i].high > sar) {
+                                isRising = true;
+                                sar = ep;
+                                ep = data[i].high;
+                                af = 0.02;
+                            } else {
+                                if (data[i].low < ep) {
+                                    ep = data[i].low;
+                                    af = Math.min(af + 0.02, 0.2);
+                                }
+                            }
+                        }
+                        sarData.push({ time: data[i].time, value: sar });
+                    }
+                }
+                sarSeries.setData(sarData);
+            } else { sarSeries.setData([]); }
+
+            // 5. Bollinger Bands
+            if (document.querySelector('[data-indicator="bollinger"]').classList.contains('bg-blue-600')) {
+                let upperData = [], lowerData = [];
+                for (let i = 19; i < data.length; i++) {
+                    let slice = data.slice(i - 19, i + 1);
+                    let sma = slice.reduce((acc, curr) => acc + curr.close, 0) / 20;
+                    let variance = slice.reduce((acc, curr) => acc + Math.pow(curr.close - sma, 2), 0) / 20;
+                    let stdDev = Math.sqrt(variance);
+                    upperData.push({ time: data[i].time, value: sma + (stdDev * 2) });
+                    lowerData.push({ time: data[i].time, value: sma - (stdDev * 2) });
+                }
+                bollingerUpper.setData(upperData);
+                bollingerLower.setData(lowerData);
+            } else { bollingerUpper.setData([]); bollingerLower.setData([]); }
+
+            // 6. RSI (14)
+            if (document.querySelector('[data-indicator="rsi"]').classList.contains('bg-blue-600')) {
+                document.getElementById('rsi-chart-container').classList.remove('hidden');
+                let rsiData = [];
+                let gains = 0, losses = 0;
+                for (let i = 1; i <= 14; i++) {
+                    let diff = data[i].close - data[i - 1].close;
+                    if (diff >= 0) gains += diff; else losses -= diff;
+                }
+                let avgGain = gains / 14, avgLoss = losses / 14;
+                for (let i = 15; i < data.length; i++) {
+                    let diff = data[i].close - data[i - 1].close;
+                    avgGain = ((avgGain * 13) + (diff > 0 ? diff : 0)) / 14;
+                    avgLoss = ((avgLoss * 13) + (diff < 0 ? -diff : 0)) / 14;
+                    let rs = avgGain / (avgLoss || 1);
+                    rsiData.push({ time: data[i].time, value: 100 - (100 / (1 + rs)) });
+                }
+                rsiSeries.setData(rsiData);
+            } else {
+                document.getElementById('rsi-chart-container').classList.add('hidden');
+                rsiSeries.setData([]);
+            }
+
+            // 7. MACD (12, 26, 9)
+            if (document.querySelector('[data-indicator="macd"]').classList.contains('bg-blue-600')) {
+                document.getElementById('macd-chart-container').classList.remove('hidden');
+                let macdLines = [], signals = [], hists = [];
+                let k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
+                let ema12 = data[0].close, ema26 = data[0].close, signal = 0;
+
+                for (let i = 0; i < data.length; i++) {
+                    ema12 = (data[i].close * k12) + (ema12 * (1 - k12));
+                    ema26 = (data[i].close * k26) + (ema26 * (1 - k26));
+                    let macd = ema12 - ema26;
+                    
+                    if (i >= 25) {
+                        if (signals.length === 0) signal = macd;
+                        else signal = (macd * k9) + (signal * (1 - k9));
+                        
+                        let hist = macd - signal;
+                        macdLines.push({ time: data[i].time, value: macd });
+                        signals.push({ time: data[i].time, value: signal });
+                        hists.push({ 
+                            time: data[i].time, value: hist,
+                            color: hist >= 0 ? '#22c55e' : '#ef4444'
+                        });
+                    }
+                }
+                macdLineSeries.setData(macdLines);
+                macdSignalSeries.setData(signals);
+                macdHistSeries.setData(hists);
+            } else {
+                document.getElementById('macd-chart-container').classList.add('hidden');
+                macdLineSeries.setData([]); macdSignalSeries.setData([]); macdHistSeries.setData([]);
+            }
+
+            // 8. OBV (On-Balance Volume)
+            if (document.querySelector('[data-indicator="obv"]').classList.contains('bg-blue-600')) {
+                document.getElementById('obv-chart-container').classList.remove('hidden');
+                let obvData = [];
+                let currentOBV = 0;
+                for (let i = 0; i < data.length; i++) {
+                    if (i > 0) {
+                        if (data[i].close > data[i - 1].close) currentOBV += data[i].volume;
+                        else if (data[i].close < data[i - 1].close) currentOBV -= data[i].volume;
+                    }
+                    obvData.push({ time: data[i].time, value: currentOBV });
+                }
+                obvSeries.setData(obvData);
+            } else {
+                document.getElementById('obv-chart-container').classList.add('hidden');
+                obvSeries.setData([]);
+            }
+
+            // 9. Oscilador Estocástico (14, 3)
+            if (document.querySelector('[data-indicator="stoch"]').classList.contains('bg-blue-600')) {
+                document.getElementById('stoch-chart-container').classList.remove('hidden');
+                let kData = [], dRaw = [];
+                for (let i = 13; i < data.length; i++) {
+                    let slice = data.slice(i - 13, i + 1);
+                    let highMax = Math.max(...slice.map(d => d.high));
+                    let lowMin = Math.min(...slice.map(d => d.low));
+                    let k = ((data[i].close - lowMin) / ((highMax - lowMin) || 1)) * 100;
+                    kData.push({ time: data[i].time, value: k });
+                    dRaw.push(k);
+                }
+                // Media móvil de 3 periodos para %D
+                let dData = [];
+                for (let i = 2; i < dRaw.length; i++) {
+                    let avgD = (dRaw[i] + dRaw[i - 1] + dRaw[i - 2]) / 3;
+                    dData.push({ time: kData[i].time, value: avgD });
+                }
+                stochKSeries.setData(kData);
+                stochDSeries.setData(dData);
+            } else {
+                document.getElementById('stoch-chart-container').classList.add('hidden');
+                stochKSeries.setData([]); stochDSeries.setData([]);
+            }
+
+            // 10. ATR (Average True Range - 14)
+            if (document.querySelector('[data-indicator="atr"]').classList.contains('bg-blue-600')) {
+                document.getElementById('atr-chart-container').classList.remove('hidden');
+                let atrData = [];
+                let trs = [];
+                for (let i = 0; i < data.length; i++) {
+                    let tr = data[i].high - data[i].low;
+                    if (i > 0) {
+                        let hl = data[i].high - data[i].low;
+                        let hc = Math.abs(data[i].high - data[i - 1].close);
+                        let lc = Math.abs(data[i].low - data[i - 1].close);
+                        tr = Math.max(hl, hc, lc);
+                    }
+                    trs.push(tr);
+                    if (i >= 13) {
+                        let atr = trs.slice(i - 13, i + 1).reduce((a, b) => a + b, 0) / 14;
+                        atrData.push({ time: data[i].time, value: atr });
+                    }
+                }
+                atrSeries.setData(atrData);
+            } else {
+                document.getElementById('atr-chart-container').classList.add('hidden');
+                atrSeries.setData([]);
+            }
+
+            // 11. Fibonacci Automático
+            if (document.querySelector('[data-indicator="fibonacci"]').classList.contains('bg-blue-600')) {
+                drawFibonacci(data);
+            } else {
+                clearFibonacci();
+            }
+        }
+
+        function drawFibonacci(data) {
+            clearFibonacci();
+            let high = -Infinity, low = Infinity;
+            data.forEach(d => {
+                if (d.high > high) high = d.high;
+                if (d.low < low) low = d.low;
+            });
+            let diff = high - low;
+            let levels = {
+                "0.0% (Máx)": high,
+                "38.2%": high - (diff * 0.382),
+                "50.0%": high - (diff * 0.500),
+                "61.8% (Áureo)": high - (diff * 0.618),
+                "100.0% (Mín)": low
+            };
+
+            Object.keys(levels).forEach(lvl => {
+                let pLine = mainSeries.createPriceLine({
+                    price: levels[lvl],
+                    color: lvl.includes("61.8") ? '#f59e0b' : '#64748b',
+                    lineWidth: lvl.includes("61.8") ? 2 : 1,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    title: `Fibo ${lvl}: ${levels[lvl].toFixed(2)}`
+                });
+                activeFibLines.push(pLine);
+            });
+        }
+
+        function clearFibonacci() {
+            activeFibLines.forEach(line => mainSeries.removePriceLine(line));
+            activeFibLines = [];
+        }
+
+        function resizeCharts() {
+            mainChart.applyOptions({ width: mainContainer.clientWidth, height: mainContainer.clientHeight });
+            rsiChart.applyOptions({ width: rsiContainer.clientWidth, height: rsiContainer.clientHeight });
+            macdChart.applyOptions({ width: macdContainer.clientWidth, height: macdContainer.clientHeight });
+            obvChart.applyOptions({ width: obvContainer.clientWidth, height: obvContainer.clientHeight });
+            stochChart.applyOptions({ width: stochContainer.clientWidth, height: stochContainer.clientHeight });
+            atrChart.applyOptions({ width: atrContainer.clientWidth, height: atrContainer.clientHeight });
+        }
+
+        // Listeners
+        document.getElementById('inputAsset1').addEventListener('change', () => updateChart());
+        document.getElementById('inputAsset2').addEventListener('change', () => { if(isComparing) updateChart(); });
+
+        document.getElementById('btnToggleCompare').addEventListener('click', (e) => {
+            isComparing = !isComparing;
+            const row = document.getElementById('compareRow');
+            if (isComparing) {
+                row.classList.remove('hidden');
+                e.target.innerText = "Comparar: ON";
+                e.target.classList.add('bg-blue-600', 'text-white');
+            } else {
+                row.classList.add('hidden');
+                e.target.innerText = "Comparar: OFF";
+                e.target.classList.remove('bg-blue-600', 'text-white');
+                isBase100 = false;
+                document.getElementById('btnBase100').innerText = "Base 100: OFF";
+                document.getElementById('btnBase100').classList.remove('bg-blue-600', 'text-white');
+                lineSeries1.setData([]);
+                compSeries.setData([]);
+            }
+            updateChart();
+        });
+
+        document.getElementById('btnBase100').addEventListener('click', (e) => {
+            isBase100 = !isBase100;
+            e.target.innerText = isBase100 ? "Base 100: ON" : "Base 100: OFF";
+            e.target.classList.toggle('bg-blue-600');
+            e.target.classList.toggle('text-white');
+            updateChart();
+        });
+
+        document.getElementById('btnRefresh').addEventListener('click', () => {
+            updateChart(true);
+        });
+
+        document.querySelectorAll('.ind-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (isComparing) {
+                    alert("Los indicadores están optimizados para el modo de un solo activo.");
+                    return;
+                }
+                btn.classList.toggle('bg-blue-600');
+                btn.classList.toggle('text-white');
+                btn.classList.toggle('bg-slate-800');
+                btn.classList.toggle('text-slate-300');
+                
+                recalculateIndicators(cachedRawData);
+                resizeCharts();
+            });
+        });
+
+        window.addEventListener('resize', resizeCharts);
+    </script>
+</body>
+</html>
