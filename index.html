@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#020617">
 <title>Graficador bursátil</title>
-<!-- Versión FIJADA (v4). No usar la URL sin versión: la v5 rompe addCandlestickSeries/addLineSeries -->
+<!-- Versión FIJADA (v4) de Lightweight Charts -->
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 :root{
@@ -40,8 +40,7 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 .tag.a1{color:var(--mut)} .tag.a2{color:var(--amber)}
 .field input{
   flex:1; min-width:0; background:transparent; border:0; outline:0;
-  font-size:16px; /* >=16px evita el zoom automático en iOS */
-  font-weight:700; text-transform:uppercase; padding:7px 0;
+  font-size:16px; font-weight:700; text-transform:uppercase; padding:7px 0;
   -webkit-user-select:text; user-select:text;
 }
 #inputAsset1{color:#60a5fa} #inputAsset2{color:var(--amber)}
@@ -109,7 +108,7 @@ footer::-webkit-scrollbar{display:none}
     <div class="row">
       <div class="field">
         <span class="tag a1">A1:</span>
-        <input id="inputAsset1" type="text" value="S&amp;P 500" placeholder="S&amp;P 500, IBEX 35, AAPL…" enterkeyhint="search"
+        <input id="inputAsset1" type="text" value="IBM" placeholder="AAPL, TSLA, SPY, MSFT…" enterkeyhint="search"
                autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 1">
         <button type="submit" class="go">Ir</button>
       </div>
@@ -118,7 +117,7 @@ footer::-webkit-scrollbar{display:none}
     <div class="row hidden" id="compareRow">
       <div class="field">
         <span class="tag a2">A2:</span>
-        <input id="inputAsset2" type="text" placeholder="Nasdaq, DAX, MSFT…" enterkeyhint="search"
+        <input id="inputAsset2" type="text" placeholder="AAPL, TSLA, MSFT…" enterkeyhint="search"
                autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 2">
       </div>
       <button type="button" id="btnBase100" class="pill">Base 100: OFF</button>
@@ -162,24 +161,15 @@ footer::-webkit-scrollbar{display:none}
 'use strict';
 
 /* ================================================================
-   CONFIGURACIÓN
+   CONFIGURACIÓN (Alpha Vantage API)
    ================================================================ */
-const RANGE = '2y';              // histórico descargado (SMA 200 necesita >200 velas)
-const INTERVAL = '1d';
-const VISIBLE_BARS = 250;        // velas visibles al abrir (≈1 año)
+const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 8000;
 
-// Yahoo Finance no envía cabeceras CORS: hace falta un proxy.
-// RECOMENDADO: pon aquí tu propio proxy (p. ej. un Cloudflare Worker) como PRIMERA entrada:
-//   u => `https://TU-WORKER.workers.dev/?url=${encodeURIComponent(u)}`,
-// Los proxies públicos son gratuitos y sin garantías; se prueban en orden.
-const PROXIES = [
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-];
-
-const TICKER_RE = /^[A-Z0-9.\-=^]{1,15}$/;
+// Clave gratuita de Alpha Vantage (puedes cambiar 'demo' por tu propia clave en alphavantage.co)
+// Con 'demo' solo funciona el ticker 'IBM'. Para otros activos, obtén una gratis.
+const AV_API_KEY = 'demo'; 
 
 /* ================================================================
    UTILIDADES DE INTERFAZ
@@ -202,12 +192,11 @@ function flash(text) {
   flashTimer = setTimeout(() => { legend.textContent = legendBase; }, 2500);
 }
 
-// Errores no capturados visibles en pantalla (en el móvil no hay consola)
 window.addEventListener('error', e => setLegend('Error: ' + e.message, true));
 window.addEventListener('unhandledrejection', e => setLegend('Error: ' + (e.reason && e.reason.message || e.reason), true));
 
 if (typeof LightweightCharts === 'undefined') {
-  setLegend('No se cargó la librería de gráficos (red o bloqueador de contenido).', true);
+  setLegend('No se cargó la librería de gráficos (red o bloqueador).', true);
   throw new Error('LightweightCharts no disponible');
 }
 
@@ -228,10 +217,8 @@ function stopTimer() {
 }
 
 /* ================================================================
-   INDICADORES (funciones puras: reciben arrays, devuelven arrays
-   alineados con las velas; null = sin valor todavía)
+   INDICADORES TÉCNICOS
    ================================================================ */
-/* @@IND_START */
 const nulls = n => new Array(n).fill(null);
 
 function sma(v, p) {
@@ -247,7 +234,6 @@ function sma(v, p) {
   return o;
 }
 
-// EMA estándar: semilla = SMA de las primeras p muestras válidas consecutivas
 function ema(v, p) {
   const o = nulls(v.length), k = 2 / (p + 1);
   let run = 0, first = -1;
@@ -268,7 +254,6 @@ function ema(v, p) {
   return o;
 }
 
-// Bandas de Bollinger (20, 2σ poblacional, como en TradingView)
 function bollinger(c, p = 20, m = 2) {
   const up = nulls(c.length), lo = nulls(c.length);
   for (let i = p - 1; i < c.length; i++) {
@@ -284,7 +269,6 @@ function bollinger(c, p = 20, m = 2) {
   return { up, lo };
 }
 
-// RSI con suavizado de Wilder
 function rsi(c, p = 14) {
   const n = c.length, o = nulls(n);
   if (n <= p) return o;
@@ -305,7 +289,6 @@ function rsi(c, p = 14) {
   return o;
 }
 
-// MACD (12, 26, 9) con señal = EMA9 del MACD
 function macd(c) {
   const e12 = ema(c, 12), e26 = ema(c, 26);
   const line = c.map((_, i) => (e12[i] != null && e26[i] != null) ? e12[i] - e26[i] : null);
@@ -325,7 +308,6 @@ function obv(bars) {
   });
 }
 
-// Estocástico (%K 14, %D = SMA 3 de %K)
 function stoch(bars, kp = 14, dp = 3) {
   const k = nulls(bars.length);
   for (let i = kp - 1; i < bars.length; i++) {
@@ -339,7 +321,6 @@ function stoch(bars, kp = 14, dp = 3) {
   return { k, d: sma(k, dp) };
 }
 
-// ATR con suavizado de Wilder
 function atr(bars, p = 14) {
   const n = bars.length, o = nulls(n);
   if (n < p) return o;
@@ -353,7 +334,6 @@ function atr(bars, p = 14) {
   return o;
 }
 
-// VWAP anclado: acumulado desde la vela `start` (con velas diarias no existe VWAP "de sesión")
 function vwapAnchored(bars, start) {
   const o = nulls(bars.length);
   let tpv = 0, vol = 0;
@@ -366,7 +346,6 @@ function vwapAnchored(bars, start) {
   return o;
 }
 
-// Parabolic SAR (paso 0.02, máximo 0.2) con la regla de no penetrar las 2 velas previas
 function parabolicSar(bars, step = 0.02, max = 0.2) {
   const n = bars.length, o = nulls(n);
   if (n < 2) return o;
@@ -390,16 +369,15 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
   }
   return o;
 }
-/* @@IND_END */
 
 /* ================================================================
-   DATOS: Yahoo Finance vía proxy, con caché. NUNCA se inventan datos.
+   DATOS: Alpha Vantage API con caché local
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
 }
 function cacheSet(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* almacenamiento lleno o bloqueado */ }
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
 async function fetchJSON(url) {
@@ -416,56 +394,53 @@ async function fetchJSON(url) {
 
 function definitiveError(msg) { const e = new Error(msg); e.definitive = true; return e; }
 
-function parseYahoo(json) {
-  const chart = json && json.chart;
-  if (!chart) throw new Error('Respuesta inesperada del proveedor');
-  if (chart.error) throw definitiveError(chart.error.description || 'Ticker no encontrado');
-  const r = chart.result && chart.result[0];
-  if (!r || !r.timestamp || !r.indicators || !r.indicators.quote || !r.indicators.quote[0]) {
-    throw definitiveError('Sin datos para ese ticker');
+function parseAlphaVantage(json, ticker) {
+  if (!json) throw definitiveError('Respuesta vacía del proveedor');
+  if (json.Note || json.Information) {
+    throw definitiveError('Límite de peticiones de Alpha Vantage alcanzado (espera un minuto).');
   }
-  const q = r.indicators.quote[0];
-  // Fecha en hora local del mercado (gmtoffset) para no desplazar velas de Asia/Oceanía
-  const off = r.meta && Number.isFinite(r.meta.gmtoffset) ? r.meta.gmtoffset : 0;
-  const byDate = new Map();
-  r.timestamp.forEach((ts, i) => {
-    const o = q.open[i], h = q.high[i], l = q.low[i], c = q.close[i];
-    if ([o, h, l, c].some(v => v == null || !isFinite(v))) return;
-    const time = new Date((ts + off) * 1000).toISOString().slice(0, 10);
-    const vol = q.volume && q.volume[i] != null ? q.volume[i] : 0;
-    byDate.set(time, { time, open: o, high: h, low: l, close: c, volume: vol });   // misma fecha: gana la última
-  });
-  const bars = [...byDate.values()].sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
-  if (bars.length < 2) throw definitiveError('Datos insuficientes para ese ticker');
-  const meta = r.meta || {};
-  return { bars, currency: meta.currency || '', name: meta.longName || meta.shortName || '', type: meta.instrumentType || '' };
+  if (json['Error Message']) {
+    throw definitiveError('Ticker «' + ticker + '» no encontrado.');
+  }
+  const ts = json['Time Series (Daily)'];
+  if (!ts) {
+    throw definitiveError('Sin datos históricos para ' + ticker);
+  }
+  const bars = [];
+  for (const [date, vals] of Object.entries(ts)) {
+    const o = parseFloat(vals['1. open']);
+    const h = parseFloat(vals['2. high']);
+    const l = parseFloat(vals['3. low']);
+    const c = parseFloat(vals['4. close']);
+    const v = parseFloat(vals['5. volume']) || 0;
+    if ([o, h, l, c].some(val => isNaN(val))) continue;
+    bars.push({ time: date, open: o, high: h, low: l, close: c, volume: v });
+  }
+  bars.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
+  if (bars.length < 2) throw definitiveError('Datos insuficientes para ' + ticker);
+  return { bars, currency: 'USD', name: ticker, type: 'EQUITY' };
 }
 
 async function getMarketData(ticker, force) {
-  const key = 'mkt2_' + ticker;
+  const key = 'av_mkt_' + ticker;
   const cached = cacheGet(key);
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
   }
-  const target = 'https://query1.finance.yahoo.com/v8/finance/chart/' +
-    encodeURIComponent(ticker) + '?range=' + RANGE + '&interval=' + INTERVAL;
-  let lastErr = null;
-  for (const mk of PROXIES) {
-    try {
-      const parsed = parseYahoo(await fetchJSON(mk(target)));
-      cacheSet(key, { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, ts: Date.now() });
-      return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'red' };
-    } catch (e) {
-      if (e.definitive) throw e;          // ticker inválido: no tiene sentido reintentar
-      lastErr = e;
-      console.warn('Proxy fallido:', e.message);
+  const target = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(ticker)}&outputsize=full&apikey=${AV_API_KEY}`;
+  
+  try {
+    const json = await fetchJSON(target);
+    const parsed = parseAlphaVantage(json, ticker);
+    cacheSet(key, { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, ts: Date.now() });
+    return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'Alpha Vantage' };
+  } catch (e) {
+    if (e.definitive) throw e;
+    if (cached && cached.bars && cached.bars.length) {
+      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché antigua' };
     }
+    throw new Error('Error de conexión con Alpha Vantage para ' + ticker + '.');
   }
-  if (cached && cached.bars && cached.bars.length) {
-    return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché antigua' };
-  }
-  const why = !lastErr ? 'sin respuesta' : (lastErr.name === 'AbortError' ? 'tiempo agotado' : lastErr.message);
-  throw new Error('No se pudieron descargar los datos de ' + ticker + ' (' + why + ').');
 }
 
 /* ================================================================
@@ -488,11 +463,6 @@ function makeChart(box, timeScale) {
 }
 
 const mainChart = makeChart($('mainChart'), tsOpts);
-if (typeof mainChart.addCandlestickSeries !== 'function') {
-  setLegend('Versión incompatible de la librería de gráficos (se requiere v4).', true);
-  throw new Error('lightweight-charts: se esperaba v4');
-}
-
 const mainSeries = mainChart.addCandlestickSeries({
   upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
   wickUpColor: '#22c55e', wickDownColor: '#ef4444',
@@ -537,7 +507,7 @@ stK.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: dash
 
 const atrS = subs.atr.chart.addLineSeries({ color: '#fbbf24', lineWidth: 2, priceLineVisible: false });
 
-/* --- Redimensionado (ResizeObserver) y sincronización de la escala temporal --- */
+/* Redimensionado y Sincronización */
 const fitters = [{ chart: mainChart, box: $('mainChart') }].concat(Object.values(subs));
 let syncing = false;
 
@@ -553,7 +523,7 @@ function syncSubs() {
     Object.values(subs).forEach(s => {
       if (!s.panel.classList.contains('hidden')) s.chart.timeScale().setVisibleLogicalRange(r);
     });
-  } catch { /* gráfico sin datos todavía */ } finally { syncing = false; }
+  } catch {} finally { syncing = false; }
 }
 if ('ResizeObserver' in window) {
   const ro = new ResizeObserver(entries => {
@@ -564,8 +534,6 @@ if ('ResizeObserver' in window) {
 }
 window.addEventListener('resize', () => { fitters.forEach(fit); syncSubs(); });
 
-// Todas las series de un gráfico tienen el mismo nº de puntos (relleno con "whitespace"),
-// por lo que el rango lógico es idéntico entre paneles.
 const syncList = fitters.map(f => ({ chart: f.chart, panel: f.panel || null }));
 syncList.forEach(src => {
   src.chart.timeScale().subscribeVisibleLogicalRangeChange(r => {
@@ -578,7 +546,7 @@ syncList.forEach(src => {
         if (dst.panel && dst.panel.classList.contains('hidden')) return;
         dst.chart.timeScale().setVisibleLogicalRange(r);
       });
-    } catch { /* ignorar */ } finally { syncing = false; }
+    } catch {} finally { syncing = false; }
   });
 });
 
@@ -602,7 +570,7 @@ function applyPrecision(price) {
 }
 
 function clearFib() {
-  fibLines.forEach(l => { try { mainSeries.removePriceLine(l); } catch { /* ya eliminada */ } });
+  fibLines.forEach(l => { try { mainSeries.removePriceLine(l); } catch {} });
   fibLines = [];
 }
 function drawFib(bars) {
@@ -625,7 +593,6 @@ function drawFib(bars) {
 
 function setPanel(key, show) { subs[key].panel.classList.toggle('hidden', !show); }
 
-// Recalcula todos los indicadores a partir de state.bars
 function recalc() {
   const bars = state.bars, n = bars.length;
   const on = k => !state.comparing && n > 0 && state.active.has(k);
@@ -687,7 +654,7 @@ function clearAll() {
 function showRecent(n) {
   try {
     mainChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - VISIBLE_BARS) - 0.5, to: n + 4 });
-  } catch { /* sin datos */ }
+  } catch {}
 }
 
 function renderSingle(d, t) {
@@ -698,22 +665,19 @@ function renderSingle(d, t) {
   mainSeries.setData(d.bars);
   recalc();
   showRecent(d.bars.length);
-  const unit = d.type === 'INDEX' ? 'pts' : d.currency;
-  const noVol = d.bars.some(b => b.volume > 0) ? '' : ' · sin volumen: OBV y VWAP no disponibles';
-  setLegend(`${t}${d.name ? ' (' + d.name + ')' : ''}: ${fmt(last.close)} ${unit} · ${last.time} · ${d.source}${noVol}`);
+  setLegend(`${t}: ${fmt(last.close)} USD · ${last.time} · Fuente: ${d.source}`);
 }
 
 function renderCompare(d1, t1, d2, t2) {
   state.bars = [];
   mainSeries.setData([]);
-  recalc();                                   // limpia indicadores y paneles
+  recalc();
   line1.applyOptions({ title: t1 });
   line2.applyOptions({ title: t2 });
-  const srcNote = (d1.source !== 'red' || d2.source !== 'red') ? ` · ${d1.source}/${d2.source}` : '';
 
   if (state.base100) {
     let a = d1.bars.slice(-VISIBLE_BARS), b = d2.bars.slice(-VISIBLE_BARS);
-    const start = a[0].time > b[0].time ? a[0].time : b[0].time;   // primera fecha común
+    const start = a[0].time > b[0].time ? a[0].time : b[0].time;
     a = a.filter(x => x.time >= start);
     b = b.filter(x => x.time >= start);
     if (!a.length || !b.length) throw new Error('Los dos activos no tienen fechas en común.');
@@ -721,161 +685,48 @@ function renderCompare(d1, t1, d2, t2) {
     line1.setData(a.map(x => ({ time: x.time, value: x.close / a[0].close * 100 })));
     line2.setData(b.map(x => ({ time: x.time, value: x.close / b[0].close * 100 })));
     showRecent(a.length);
-    setLegend(`Base 100 desde ${start}: ${t1} vs ${t2}${srcNote}`);
+    setLegend(`Base 100 desde ${start}: ${t1} vs ${t2}`);
   } else {
     const l1 = d1.bars[d1.bars.length - 1], l2 = d2.bars[d2.bars.length - 1];
     applyPrecision(Math.min(l1.close, l2.close));
     line1.setData(d1.bars.map(x => ({ time: x.time, value: x.close })));
     line2.setData(d2.bars.map(x => ({ time: x.time, value: x.close })));
     showRecent(Math.max(d1.bars.length, d2.bars.length));
-    const u1 = d1.type === 'INDEX' ? 'pts' : d1.currency, u2 = d2.type === 'INDEX' ? 'pts' : d2.currency;
-    const mixed = u1 && u2 && u1 !== u2;
-    setLegend(`${t1}: ${fmt(l1.close)} ${u1} | ${t2}: ${fmt(l2.close)} ${u2}` +
-      (mixed ? ' · monedas distintas: usa Base 100' : '') + srcNote);
+    setLegend(`${t1}: ${fmt(l1.close)} | ${t2}: ${fmt(l2.close)}`);
   }
 }
 
-/* @@ALIAS_START */
-// Atajos locales (funcionan sin red). Símbolos de Yahoo Finance.
-const INDEX_ALIASES = [
-  { symbol: '^GSPC',     label: 'S&P 500',            names: ['S&P 500', 'SP500', 'S&P', 'SPX'] },
-  { symbol: '^IXIC',     label: 'Nasdaq Composite',   names: ['Nasdaq', 'Nasdaq Composite', 'IXIC'] },
-  { symbol: '^NDX',      label: 'Nasdaq 100',         names: ['Nasdaq 100', 'NDX'] },
-  { symbol: '^DJI',      label: 'Dow Jones',          names: ['Dow Jones', 'DJIA', 'DJI'] },
-  { symbol: '^RUT',      label: 'Russell 2000',       names: ['Russell 2000', 'Russell', 'RUT'] },
-  { symbol: '^VIX',      label: 'VIX (volatilidad)',  names: ['VIX', 'Volatilidad'] },
-  { symbol: '^IBEX',     label: 'IBEX 35',            names: ['IBEX 35', 'IBEX', 'IBEX35'] },
-  { symbol: '^GDAXI',    label: 'DAX 40',             names: ['DAX', 'DAX 40', 'DAX40', 'GDAXI'] },
-  { symbol: '^FCHI',     label: 'CAC 40',             names: ['CAC 40', 'CAC', 'CAC40'] },
-  { symbol: '^FTSE',     label: 'FTSE 100',           names: ['FTSE 100', 'FTSE', 'FTSE100'] },
-  { symbol: 'FTSEMIB.MI', label: 'FTSE MIB (Italia)', names: ['FTSE MIB', 'MIB', 'FTSEMIB'] },
-  { symbol: '^STOXX50E', label: 'Euro Stoxx 50',      names: ['Euro Stoxx 50', 'Eurostoxx', 'Eurostoxx 50', 'STOXX50'] },
-  { symbol: '^AEX',      label: 'AEX (Países Bajos)', names: ['AEX'] },
-  { symbol: '^SSMI',     label: 'SMI (Suiza)',        names: ['SMI', 'Swiss Market Index'] },
-  { symbol: '^N225',     label: 'Nikkei 225',         names: ['Nikkei', 'Nikkei 225', 'N225'] },
-  { symbol: '^HSI',      label: 'Hang Seng',          names: ['Hang Seng', 'HSI'] },
-  { symbol: '000001.SS', label: 'Shanghai Composite', names: ['Shanghai', 'Shanghai Composite'] },
-  { symbol: '^KS11',     label: 'KOSPI',              names: ['KOSPI'] },
-  { symbol: '^NSEI',     label: 'Nifty 50',           names: ['Nifty', 'Nifty 50'] },
-  { symbol: '^BSESN',    label: 'Sensex',             names: ['Sensex'] },
-  { symbol: '^AXJO',     label: 'ASX 200',            names: ['ASX 200', 'ASX200', 'AXJO'] },
-  { symbol: '^GSPTSE',   label: 'S&P/TSX (Canadá)',   names: ['TSX', 'S&P TSX'] },
-  { symbol: '^BVSP',     label: 'Bovespa',            names: ['Bovespa', 'Ibovespa'] },
-];
-const normName = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-function localSuggestions(q) {
-  const n = normName(q);
-  if (n.length < 2) return [];
-  return INDEX_ALIASES
-    .filter(a => [a.label].concat(a.names).some(x =>
-      normName(x).startsWith(n) || x.split(/\s+/).some(w => normName(w).startsWith(n))))
-    .map(a => ({ symbol: a.symbol, name: a.label, type: 'INDEX', exch: '' }));
-}
-
-// Convierte lo que escribe el usuario en un símbolo de Yahoo:
-// 1) símbolo elegido de la lista → tal cual; 2) alias exacto (nombre de índice); 3) formato de ticker → tal cual;
-// 4) cualquier otro texto → búsqueda en Yahoo (primer resultado)
 async function resolveSymbol(raw, input) {
   if (input && input.dataset.picked && input.dataset.picked === raw) return raw;
-  const n = normName(raw);
-  const al = INDEX_ALIASES.find(a => a.names.some(x => normName(x) === n));
-  if (al) return al.symbol;
-  const up = raw.toUpperCase();
-  if (TICKER_RE.test(up)) return up;
-  const res = await searchSymbols(raw);
-  if (!res.length) throw new Error('No se encontró «' + raw + '». Prueba con otro nombre o con el símbolo de Yahoo (ej: ^GSPC).');
-  return res[0].symbol;
-}
-/* @@ALIAS_END */
-
-async function searchSymbols(q) {
-  const target = 'https://query1.finance.yahoo.com/v1/finance/search?q=' + encodeURIComponent(q) +
-    '&quotesCount=8&newsCount=0&listsCount=0';
-  for (const mk of PROXIES) {
-    try {
-      const json = await fetchJSON(mk(target));
-      if (json && Array.isArray(json.quotes)) {
-        return json.quotes.filter(x => x.symbol).map(x => ({
-          symbol: x.symbol, name: x.longname || x.shortname || '', type: x.quoteType || '', exch: x.exchDisp || '',
-        }));
-      }
-    } catch (e) { console.warn('Búsqueda fallida:', e.message); }
-  }
-  throw new Error('No se pudo buscar «' + q + '» (proveedor no disponible). Usa el símbolo de Yahoo, ej: ^GSPC.');
+  const up = raw.toUpperCase().trim();
+  if (/^[A-Z0-9.]{1,10}$/.test(up)) return up;
+  throw new Error('Símbolo inválido. Usa tickers estándar (ej: IBM, AAPL, TSLA, SPY, MSFT).');
 }
 
-/* --- Lista de sugerencias bajo cada campo --- */
-const suggestLists = [];
-function hideSuggest() { suggestLists.forEach(u => u.classList.add('hidden')); }
-
-function attachSuggest(input) {
-  const ul = document.createElement('ul');
-  ul.className = 'suggest hidden';
-  input.parentElement.appendChild(ul);
-  suggestLists.push(ul);
-  let timer = null, seq = 0;
-
-  const pick = it => {
-    input.value = it.symbol;
-    input.dataset.picked = it.symbol;
-    hideSuggest();
-    updateChart();
-  };
-  const show = items => {
-    ul.textContent = '';
-    items.slice(0, 8).forEach(it => {
-      const li = document.createElement('li');
-      const sym = document.createElement('b');
-      sym.textContent = it.symbol;
-      const desc = document.createElement('span');
-      desc.textContent = [it.name, it.type, it.exch].filter(Boolean).join(' · ');
-      li.append(sym, desc);
-      li.addEventListener('pointerdown', e => { e.preventDefault(); pick(it); });
-      ul.appendChild(li);
-    });
-    ul.classList.toggle('hidden', items.length === 0);
-  };
-
-  input.addEventListener('input', () => {
-    delete input.dataset.picked;
-    clearTimeout(timer);
-    const q = input.value.trim();
-    if (q.length < 2) { ul.classList.add('hidden'); return; }
-    const local = localSuggestions(q);
-    show(local);
-    const my = ++seq;
-    timer = setTimeout(async () => {
-      try {
-        const remote = await searchSymbols(q);
-        if (my !== seq || document.activeElement !== input) return;
-        const seen = new Set(local.map(x => x.symbol));
-        show(local.concat(remote.filter(x => !seen.has(x.symbol))));
-      } catch { /* sin red: se quedan las sugerencias locales */ }
-    }, 400);
-  });
-  input.addEventListener('blur', () => setTimeout(() => ul.classList.add('hidden'), 150));
-}
-
+/* ================================================================
+   EVENTOS DE BÚSQUEDA Y UI
+   ================================================================ */
 async function updateChart(force = false) {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  hideSuggest();
-  const in1 = $('inputAsset1'), in2 = $('inputAsset2');
+  const in1 = $('inputAsset1'), in2 =$('inputAsset2');
   const raw1 = in1.value.trim(), raw2 = in2.value.trim();
-  const my = ++state.reqId;                    // descarta respuestas de peticiones antiguas
+  const my = ++state.reqId;
 
-  if (!raw1) { clearAll(); setLegend('Escribe un activo o índice (ej: S&P 500, IBEX 35, AAPL)'); stopTimer(); return; }
+  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: IBM, AAPL, TSLA)'); stopTimer(); return; }
 
   startTimer();
   try {
     const t1 = await resolveSymbol(raw1, in1);
     if (my !== state.reqId) return;
     in1.value = t1; in1.dataset.picked = t1;
+    
     const t2 = (state.comparing && raw2) ? await resolveSymbol(raw2, in2) : '';
     if (my !== state.reqId) return;
     if (t2) { in2.value = t2; in2.dataset.picked = t2; }
+
     const d1 = await getMarketData(t1, force);
     if (my !== state.reqId) return;
+    
     if (!state.comparing) { renderSingle(d1, t1); return; }
     if (!t2) {
       renderSingle(d1, t1);
@@ -887,16 +738,13 @@ async function updateChart(force = false) {
     renderCompare(d1, t1, d2, t2);
   } catch (err) {
     if (my !== state.reqId) return;
-    clearAll();                                // no dejar a la vista un gráfico que no corresponde
+    clearAll();
     setLegend(err.message || String(err), true);
   } finally {
     if (my === state.reqId) stopTimer();
   }
 }
 
-/* ================================================================
-   EVENTOS
-   ================================================================ */
 $('searchForm').addEventListener('submit', e => { e.preventDefault(); updateChart(); });
 
 $('btnToggleCompare').addEventListener('click', e => {
@@ -907,8 +755,7 @@ $('btnToggleCompare').addEventListener('click', e => {
   $('compareRow').classList.toggle('hidden', !state.comparing);
   if (!state.comparing) {
     state.base100 = false;
-    $('btnBase100').textContent = 'Base 100: OFF';
-    $('btnBase100').classList.remove('on');
+    $('btnBase100').textContent = 'Base 100: OFF';$('btnBase100').classList.remove('on');
     line1.setData([]); line2.setData([]);
   }
   fitters.forEach(fit);
@@ -938,8 +785,6 @@ document.querySelectorAll('.ind-btn').forEach(btn => {
    ARRANQUE
    ================================================================ */
 fitters.forEach(fit);
-attachSuggest($('inputAsset1'));
-attachSuggest($('inputAsset2'));
 updateChart();
 </script>
 </body>
