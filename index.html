@@ -102,7 +102,7 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v2.9-YahooCodeTabs</span>
+      <span class="version-tag" id="appVersionLabel">v3.0-Fast</span>
     </div>
   </div>
 
@@ -164,12 +164,12 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.9-YahooCodeTabs';
+const APP_VERSION = 'v3.0-Fast';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
-const VISIBLE_BARS = 250;
+const VISIBLE_BARS = 120;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
-const FETCH_TIMEOUT_MS = 12000;
+const FETCH_TIMEOUT_MS = 10000;
 const PINNED_KEY = 'av_pinned_asset';
 
 const $ = id => document.getElementById(id);
@@ -454,7 +454,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Proveedor Yahoo Finance (vía CodeTabs proxy)
+   DATOS: Yahoo Finance optimizado a 6 meses (rango ligero)
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -509,14 +509,15 @@ function parseYahooJSON(json, ticker) {
 }
 
 async function getMarketData(ticker, force) {
-  const key = 'yh_codetabs_' + ticker;
+  const key = 'yh_fast_' + ticker;
   const cached = cacheGet(key);
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
   }
 
   const sym = ticker.toUpperCase().trim();
-  const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2y`;
+  // Reducido a range=6m para respuesta inmediata y ligera
+  const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=6m`;
   const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=` + encodeURIComponent(targetUrl);
 
   try {
