@@ -102,7 +102,7 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v2.8-Yahoo</span>
+      <span class="version-tag" id="appVersionLabel">v2.9-YahooCodeTabs</span>
     </div>
   </div>
 
@@ -164,7 +164,7 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.8-Yahoo';
+const APP_VERSION = 'v2.9-YahooCodeTabs';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
@@ -454,7 +454,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Proveedor Yahoo Finance (vía corsproxy.io ultrarrápido)
+   DATOS: Proveedor Yahoo Finance (vía CodeTabs proxy)
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -472,7 +472,7 @@ async function fetchJSON(url) {
     return await res.json();
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('Tiempo de espera agotado al conectar con Yahoo Finance.');
+      throw new Error('Tiempo de espera agotado al conectar con el servidor.');
     }
     throw err;
   } finally {
@@ -509,7 +509,7 @@ function parseYahooJSON(json, ticker) {
 }
 
 async function getMarketData(ticker, force) {
-  const key = 'yh_mkt_' + ticker;
+  const key = 'yh_codetabs_' + ticker;
   const cached = cacheGet(key);
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
@@ -517,7 +517,7 @@ async function getMarketData(ticker, force) {
 
   const sym = ticker.toUpperCase().trim();
   const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2y`;
-  const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(targetUrl);
+  const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=` + encodeURIComponent(targetUrl);
 
   try {
     const json = await fetchJSON(proxyUrl);
