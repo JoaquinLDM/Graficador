@@ -29,7 +29,9 @@ button{font-family:inherit; user-select:none; -webkit-user-select:none}
 /* Cabecera */
 header{background:var(--panel); border-bottom:1px solid var(--line); padding:10px; flex:0 0 auto; z-index:40}
 .header-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px; color:var(--mut)}
+.header-badges{display:flex; gap:6px; align-items:center}
 .version-tag{background:var(--line2); padding:2px 6px; border-radius:4px; font-family:monospace; color:#38bdf8; font-weight:700}
+.settings-btn{background:var(--line2); border:0; border-radius:4px; color:var(--txt); padding:2px 6px; cursor:pointer; font-size:12px}
 
 form{margin:0; display:flex; flex-direction:column; gap:8px}
 .row{display:flex; align-items:center; gap:8px}
@@ -59,6 +61,12 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 }
 .pill:hover{border-color:#475569}
 .pill.on{background:var(--blue); border-color:var(--blue); color:#fff}
+
+/* Panel de Ajustes API */
+.settings-panel{background:#0b1220; border:1px solid var(--line2); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; font-size:12px}
+.settings-panel input{background:var(--bg); border:1px solid var(--line2); color:var(--txt); padding:6px; border-radius:4px; font-family:monospace; font-size:12px}
+.settings-row{display:flex; gap:6px; align-items:center}
+.save-key-btn{background:var(--blue); color:#fff; border:0; border-radius:4px; padding:6px 12px; cursor:pointer; font-weight:700}
 
 /* Área de gráficos */
 #wrap{flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; background:var(--bg)}
@@ -100,13 +108,27 @@ footer::-webkit-scrollbar{display:none}
 <header>
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
-    <span class="version-tag" id="appVersionLabel">v2.3-AlphaVantage</span>
+    <div class="header-badges">
+      <button type="button" id="btnToggleSettings" class="settings-btn" title="Configurar API Key">⚙️ API</button>
+      <span class="version-tag" id="appVersionLabel">v2.4-AlphaVantage</span>
+    </div>
   </div>
+
+  <!-- Panel oculto para configurar la API Key personalizada -->
+  <div class="settings-panel hidden" id="settingsPanel">
+    <label for="inputApiKey">Clave API de Alpha Vantage (gratuita):</label>
+    <div class="settings-row">
+      <input type="text" id="inputApiKey" placeholder="Introduce tu API key aquí…" autocomplete="off">
+      <button type="button" id="btnSaveApiKey" class="save-key-btn">Guardar</button>
+    </div>
+    <span style="font-size:10px; color:var(--mut)">Consigue tu clave gratis en alphavantage.co para operar con cualquier mercado.</span>
+  </div>
+
   <form id="searchForm" autocomplete="off">
     <div class="row">
       <div class="field">
         <span class="tag a1">A1:</span>
-        <input id="inputAsset1" type="text" value="" placeholder="Ej: IBM, AAPL, TSLA…" enterkeyhint="search"
+        <input id="inputAsset1" type="text" value="" placeholder="Ej: AAPL, TSLA, MSFT…" enterkeyhint="search"
                autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 1">
         <button type="button" id="btnPin" class="pin-btn" title="Anclar activo por defecto">📌</button>
         <button type="submit" class="go">Ir</button>
@@ -143,7 +165,7 @@ footer::-webkit-scrollbar{display:none}
 
 <footer>
   <button class="pill ind-btn" data-indicator="bollinger">Bollinger</button>
-  <button class="pill ind-btn" data-indicator="frama">FRAMA + BB</button>
+  <button class="pill ind-btn" data-indicator="frama">FRAMA HeikenAshi + BB</button>
   <button class="pill ind-btn" data-indicator="fibonacci">Fibonacci Auto</button>
   <button class="pill ind-btn" data-indicator="sma200">SMA 200</button>
   <button class="pill ind-btn" data-indicator="ema50">EMA 50</button>
@@ -160,14 +182,19 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.3-AlphaVantage';
+const APP_VERSION = 'v2.4-AlphaVantage';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 8000;
-const AV_API_KEY = 'demo'; 
 const PINNED_KEY = 'av_pinned_asset';
+const API_KEY_STORAGE = 'av_custom_api_key';
+
+// Obtener API Key guardada o usar 'demo' por defecto
+function getApiKey() {
+  return localStorage.getItem(API_KEY_STORAGE) || 'demo';
+}
 
 const $ = id => document.getElementById(id);
 const legend = $('legendInfo');
@@ -212,7 +239,7 @@ function stopTimer() {
 }
 
 /* ================================================================
-   INDICADORES TÉCNICOS (Incluyendo FRAMA y FRAMA Bollinger)
+   INDICADORES TÉCNICOS (Incluyendo Heiken Ashi y FRAMA Fractal)
    ================================================================ */
 const nulls = n => new Array(n).fill(null);
 
@@ -264,11 +291,40 @@ function bollinger(c, p = 20, m = 2) {
   return { up, lo };
 }
 
-// FRAMA (Fractal Adaptive Moving Average - John Ehlers)
-function frama(closes, highs, lows, p = 30) {
-  const n = closes.length, o = nulls(n);
+// Transformación Heiken Ashi para suavizar datos de entrada
+function computeHeikenAshi(bars) {
+  const ha = [];
+  if (!bars.length) return ha;
+  let prevOpen = (bars[0].open + bars[0].close) / 2;
+  let prevClose = (bars[0].open + bars[0].high + bars[0].low + bars[0].close) / 4;
+
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    const close = (b.open + b.high + b.low + b.close) / 4;
+    let open = prevOpen;
+    if (i > 0) {
+      open = (prevOpen + prevClose) / 2;
+    }
+    const high = Math.max(b.high, open, close);
+    const low = Math.min(b.low, open, close);
+    ha.push({ time: b.time, open, high, low, close, volume: b.volume });
+    prevOpen = open;
+    prevClose = close;
+  }
+  return ha;
+}
+
+// FRAMA (Fractal Adaptive Moving Average) calculada sobre datos Heiken Ashi
+function framaHeikenAshiBollinger(bars, p = 30, m = 2) {
+  const n = bars.length;
+  const mid = nulls(n), up = nulls(n), lo = nulls(n);
+  if (n < p) return { mid, up, lo };
+
+  const ha = computeHeikenAshi(bars);
+  const closes = ha.map(b => b.close);
+  const highs = ha.map(b => b.high);
+  const lows = ha.map(b => b.low);
   const half = Math.floor(p / 2);
-  if (n < p) return o;
 
   for (let i = p - 1; i < n; i++) {
     let h1 = -Infinity, l1 = Infinity;
@@ -300,20 +356,15 @@ function frama(closes, highs, lows, p = 30) {
     let alpha = Math.exp(-4.6 * (dim - 1));
     alpha = Math.max(0.01, Math.min(1, alpha));
 
-    if (i === p - 1 || o[i - 1] == null) {
-      o[i] = closes[i];
+    if (i === p - 1 || mid[i - 1] == null) {
+      mid[i] = closes[i];
     } else {
-      o[i] = alpha * closes[i] + (1 - alpha) * o[i - 1];
+      mid[i] = alpha * closes[i] + (1 - alpha) * mid[i - 1];
     }
   }
-  return o;
-}
 
-// Bandas de Bollinger basadas en FRAMA
-function framaBollinger(closes, highs, lows, p = 30, m = 2) {
-  const mid = frama(closes, highs, lows, p);
-  const up = nulls(closes.length), lo = nulls(closes.length);
-  for (let i = p - 1; i < closes.length; i++) {
+  // Bandas de Bollinger sobre la FRAMA Heiken Ashi
+  for (let i = p - 1; i < n; i++) {
     if (mid[i] == null) continue;
     let sumSq = 0, count = 0;
     for (let j = i - p + 1; j <= i; j++) {
@@ -324,6 +375,7 @@ function framaBollinger(closes, highs, lows, p = 30, m = 2) {
     up[i] = mid[i] + m * sd;
     lo[i] = mid[i] - m * sd;
   }
+
   return { mid, up, lo };
 }
 
@@ -429,7 +481,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Alpha Vantage API con caché local
+   DATOS: Alpha Vantage API con caché local y API Key personalizada
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -455,7 +507,7 @@ function definitiveError(msg) { const e = new Error(msg); e.definitive = true; r
 function parseAlphaVantage(json, ticker) {
   if (!json) throw definitiveError('Respuesta vacía del proveedor');
   if (json.Note || json.Information) {
-    throw definitiveError('Límite de peticiones de Alpha Vantage alcanzado (espera un minuto).');
+    throw definitiveError('Límite de peticiones de Alpha Vantage alcanzado (espera un minuto o usa tu propia API Key).');
   }
   if (json['Error Message']) {
     throw definitiveError('Ticker «' + ticker + '» no encontrado.');
@@ -485,7 +537,8 @@ async function getMarketData(ticker, force) {
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
   }
-  const target = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(ticker)}&outputsize=full&apikey=${AV_API_KEY}`;
+  const apiKey = getApiKey();
+  const target = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(ticker)}&outputsize=full&apikey=${apiKey}`;
   
   try {
     const json = await fetchJSON(target);
@@ -535,7 +588,7 @@ const ov = {
                pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false }),
   bbUp:      mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
   bbLo:      mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
-  framaMid:  mainChart.addLineSeries({ color: '#10b981', lineWidth: 2, title: 'FRAMA', priceLineVisible: false, lastValueVisible: false }),
+  framaMid:  mainChart.addLineSeries({ color: '#10b981', lineWidth: 2, title: 'FRAMA HA', priceLineVisible: false, lastValueVisible: false }),
   framaUp:   mainChart.addLineSeries({ color: 'rgba(16,185,129,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
   framaLo:   mainChart.addLineSeries({ color: 'rgba(16,185,129,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
 };
@@ -658,8 +711,6 @@ function recalc() {
   const bars = state.bars, n = bars.length;
   const on = k => !state.comparing && n > 0 && state.active.has(k);
   const closes = bars.map(b => b.close);
-  const highs = bars.map(b => b.high);
-  const lows = bars.map(b => b.low);
   const put = (series, k, fn) => series.setData(on(k) ? fn() : []);
 
   put(ov.sma, 'sma200', () => toLine(bars, sma(closes, 200)));
@@ -674,7 +725,7 @@ function recalc() {
   } else { ov.bbUp.setData([]); ov.bbLo.setData([]); }
 
   if (on('frama')) {
-    const fb = framaBollinger(closes, highs, lows);
+    const fb = framaHeikenAshiBollinger(bars);
     ov.framaMid.setData(toLine(bars, fb.mid));
     ov.framaUp.setData(toLine(bars, fb.up));
     ov.framaLo.setData(toLine(bars, fb.lo));
@@ -775,7 +826,7 @@ async function resolveSymbol(raw, input) {
   if (input && input.dataset.picked && input.dataset.picked === raw) return raw;
   const up = raw.toUpperCase().trim();
   if (/^[A-Z0-9.]{1,10}$/.test(up)) return up;
-  throw new Error('Símbolo inválido. Usa tickers estándar (ej: IBM, AAPL, TSLA, SPY, MSFT).');
+  throw new Error('Símbolo inválido. Usa tickers estándar (ej: AAPL, TSLA, SPY, MSFT).');
 }
 
 /* ================================================================
@@ -821,6 +872,31 @@ async function updateChart(force = false) {
 }
 
 $('searchForm').addEventListener('submit', e => { e.preventDefault(); updateChart(); });
+
+/* --- Panel de ajustes de API Key --- */
+const btnToggleSettings = $('btnToggleSettings');
+const settingsPanel = $('settingsPanel');
+const inputApiKey = $('inputApiKey');
+const btnSaveApiKey = $('btnSaveApiKey');
+
+// Cargar clave actual en el input si existe
+inputApiKey.value = localStorage.getItem(API_KEY_STORAGE) || '';
+
+btnToggleSettings.addEventListener('click', () => {
+  settingsPanel.classList.toggle('hidden');
+});
+
+btnSaveApiKey.addEventListener('click', () => {
+  const keyVal = inputApiKey.value.trim();
+  if (keyVal) {
+    localStorage.setItem(API_KEY_STORAGE, keyVal);
+    flash('¡API Key guardada correctamente!');
+  } else {
+    localStorage.removeItem(API_KEY_STORAGE);
+    flash('API Key eliminada (usando modo demo).');
+  }
+  settingsPanel.classList.add('hidden');
+});
 
 /* --- Gestión de anclaje (Pin) --- */
 const btnPin = $('btnPin');
