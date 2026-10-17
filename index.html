@@ -1,672 +1,946 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mobile Trading PWA - 11 Indicadores</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- TradingView Lightweight Charts -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #020617;
-            touch-action: manipulation;
-            -webkit-user-select: none;
-            user-select: none;
-        }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#020617">
+<title>Graficador bursátil</title>
+<!-- Versión FIJADA (v4). No usar la URL sin versión: la v5 rompe addCandlestickSeries/addLineSeries -->
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{
+  --bg:#020617; --panel:#0f172a; --line:#1e293b; --line2:#334155;
+  --txt:#e2e8f0; --mut:#94a3b8; --blue:#2563eb; --amber:#f59e0b;
+}
+*{box-sizing:border-box}
+html,body{
+  height:100%; margin:0; padding:0; overflow:hidden;
+  background:var(--bg); color:var(--txt);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+}
+body{
+  display:flex; flex-direction:column;
+  height:100vh; height:100dvh;
+  padding-top:env(safe-area-inset-top);
+}
+button{font-family:inherit; user-select:none; -webkit-user-select:none}
+.hidden{display:none !important}
+
+/* Cabecera */
+header{background:var(--panel); border-bottom:1px solid var(--line); padding:10px; flex:0 0 auto; z-index:40}
+form{margin:0; display:flex; flex-direction:column; gap:8px}
+.row{display:flex; align-items:center; gap:8px}
+.row + .row{padding-top:8px; border-top:1px solid var(--line)}
+.field{
+  flex:1; min-width:0; display:flex; align-items:center; gap:6px; position:relative;
+  background:var(--line); border:1px solid var(--line2); border-radius:6px; padding:2px 6px 2px 10px;
+}
+.tag{font-size:10px; font-weight:700; text-transform:uppercase; flex:0 0 auto}
+.tag.a1{color:var(--mut)} .tag.a2{color:var(--amber)}
+.field input{
+  flex:1; min-width:0; background:transparent; border:0; outline:0;
+  font-size:16px; /* >=16px evita el zoom automático en iOS */
+  font-weight:700; text-transform:uppercase; padding:7px 0;
+  -webkit-user-select:text; user-select:text;
+}
+#inputAsset1{color:#60a5fa} #inputAsset2{color:var(--amber)}
+.go{background:var(--blue); color:#fff; border:0; border-radius:5px; font-size:12px; font-weight:700; padding:7px 14px; cursor:pointer}
+.go:active{background:#1d4ed8}
+
+.pill{
+  background:var(--line); color:#cbd5e1; border:1px solid var(--line2); border-radius:999px;
+  padding:8px 14px; font-size:12px; font-weight:500; white-space:nowrap; cursor:pointer; flex:0 0 auto;
+  transition:background .15s,border-color .15s;
+}
+.pill:hover{border-color:#475569}
+.pill.on{background:var(--blue); border-color:var(--blue); color:#fff}
+
+/* Sugerencias de búsqueda */
+.suggest{
+  position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30; margin:0; padding:4px 0; list-style:none;
+  max-height:40vh; overflow-y:auto; background:#0b1220; border:1px solid var(--line2); border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);
+}
+.suggest li{padding:8px 12px; display:flex; gap:10px; align-items:baseline; cursor:pointer; font-size:13px}
+.suggest li:hover,.suggest li:active{background:var(--line)}
+.suggest b{color:#e2e8f0; flex:0 0 auto}
+.suggest span{color:var(--mut); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+/* Área de gráficos */
+#wrap{flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; background:var(--bg)}
+.mainbox{position:relative; flex:1 0 220px; min-height:220px}
+.cbox{position:absolute; inset:0; overflow:hidden}
+.panel{position:relative; flex:0 0 72px; height:72px; border-top:1px solid var(--line)}
+.plabel{position:absolute; top:2px; left:6px; z-index:3; font-size:10px; color:#64748b; pointer-events:none}
+
+.legend{
+  position:absolute; top:8px; left:8px; z-index:5; max-width:calc(100% - 16px);
+  background:rgba(15,23,42,.92); border:1px solid var(--line); border-radius:6px;
+  padding:6px 10px; font-size:11px; line-height:1.35; color:#cbd5e1; pointer-events:none;
+}
+.legend.err{color:#fca5a5; border-color:#7f1d1d}
+.attr{position:absolute; bottom:30px; left:8px; z-index:4; font-size:9px; color:#475569; text-decoration:none}
+
+.overlay{
+  position:absolute; inset:0; z-index:20; background:rgba(2,6,23,.8);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  font:12px ui-monospace,Menlo,Consolas,monospace; color:#cbd5e1;
+}
+.spin{width:32px; height:32px; border:3px solid #3b82f6; border-top-color:transparent; border-radius:50%; animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#timerCount{color:#60a5fa; font-weight:700}
+
+/* Pie: indicadores */
+footer{
+  flex:0 0 auto; display:flex; align-items:center; gap:8px; overflow-x:auto;
+  background:var(--panel); border-top:1px solid var(--line);
+  padding:8px 12px calc(8px + env(safe-area-inset-bottom)); z-index:20;
+  scrollbar-width:none; -ms-overflow-style:none;
+}
+footer::-webkit-scrollbar{display:none}
+#btnRefresh{background:var(--blue); border-color:var(--blue); color:#fff; font-weight:700}
+</style>
 </head>
-<body class="bg-slate-950 text-slate-100 h-full w-screen flex flex-col justify-between">
-
-    <!-- 1. CABECERA DE CONTROLES -->
-    <header class="bg-slate-900 border-b border-slate-800 p-2.5 flex flex-col space-y-2 shrink-0 z-20">
-        <form id="searchForm" action="javascript:void(0);" class="m-0 p-0 flex flex-col space-y-2">
-            <!-- Fila 1: Activo 1, Buscar y Comparar -->
-            <div class="flex items-center justify-between space-x-2">
-                <div class="flex items-center space-x-1.5 flex-1 bg-slate-800 rounded border border-slate-700 px-2 py-0.5">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">A1:</span>
-                    <input id="inputAsset1" type="text" enterkeyhint="search" value="TSLA" placeholder="TSLA, AAPL..." class="bg-transparent text-xs text-blue-400 font-bold py-1.5 w-full uppercase focus:outline-none">
-                    <button type="submit" id="btnSearchSubmit" class="bg-blue-600 text-white text-[11px] font-bold px-3 py-1 rounded shrink-0 active:bg-blue-700">
-                        Ir
-                    </button>
-                </div>
-
-                <button type="button" id="btnToggleCompare" class="bg-slate-800 text-xs font-semibold px-2.5 py-1.5 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
-                    Comparar: OFF
-                </button>
-            </div>
-
-            <!-- Fila 2: Activo 2 (Condicional) y Base 100 -->
-            <div id="compareRow" class="flex items-center justify-between pt-1 border-t border-slate-800/80 hidden space-x-2">
-                <div class="flex items-center space-x-1.5 flex-1 bg-slate-800 rounded border border-slate-700 px-2 py-0.5">
-                    <span class="text-[10px] uppercase font-bold text-amber-500 shrink-0">A2:</span>
-                    <input id="inputAsset2" type="text" enterkeyhint="search" placeholder="MSFT, NVDA..." class="bg-transparent text-xs text-amber-500 font-bold py-1.5 w-full uppercase focus:outline-none">
-                </div>
-
-                <button type="button" id="btnBase100" class="bg-slate-800 text-[10px] font-semibold px-2.5 py-1.5 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
-                    Base 100: OFF
-                </button>
-            </div>
-        </form>
-    </header>
-
-    <!-- 2. ÁREA DE GRÁFICOS -->
-    <main id="chart-main-wrapper" class="flex-1 w-full relative bg-slate-950 flex flex-col min-h-[250px] overflow-hidden">
-        <!-- Gráfico Principal -->
-        <div id="main-chart-container" class="w-full flex-1 relative min-h-[200px]"></div>
-        
-        <!-- Subpaneles de Indicadores -->
-        <div id="rsi-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="macd-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="obv-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="stoch-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="atr-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
-
-        <!-- Leyenda Flotante -->
-        <div class="absolute top-2 left-2 pointer-events-none bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded text-[10px] text-slate-300 border border-slate-800/80 z-10">
-            <span id="legendInfo">Cargando Tesla (TSLA)...</span>
-        </div>
-
-        <!-- Indicador de Carga -->
-        <div id="loadingOverlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 z-50 hidden">
-            <div class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-xs font-mono text-slate-300 flex items-center space-x-1">
-                <span>Cargando datos...</span>
-                <span id="timerCount" class="text-blue-400 font-bold">0.0s</span>
-            </div>
-        </div>
-    </main>
-
-    <!-- 3. FOOTER / INDICADORES -->
-    <footer class="h-14 bg-slate-900 border-t border-slate-800 px-3 flex items-center overflow-x-auto space-x-2 shrink-0 no-scrollbar z-20">
-        <button data-indicator="bollinger" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Bollinger</button>
-        <button data-indicator="fibonacci" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Fibonacci Auto</button>
-        <button data-indicator="sma200" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">SMA 200</button>
-        <button data-indicator="ema50" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">EMA 50</button>
-        <button data-indicator="vwap" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">VWAP</button>
-        <button data-indicator="sar" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Parabolic SAR</button>
-        <button data-indicator="rsi" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">RSI (14)</button>
-        <button data-indicator="macd" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">MACD</button>
-        <button data-indicator="obv" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">OBV</button>
-        <button data-indicator="stoch" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Estocástico</button>
-        <button data-indicator="atr" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">ATR (14)</button>
-        <button id="btnRefresh" class="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap shadow transition shrink-0">Recargar</button>
-    </footer>
-
-    <!-- LÓGICA DE LA APLICACIÓN -->
-    <script>
-        let isComparing = false;
-        let isBase100 = false;
-        let activeFibLines = [];
-        let timerInterval = null;
-        let startTime = 0;
-        let cachedRawData = [];
-
-        // Dimensiones seguras iniciales para móvil
-        const screenWidth = window.innerWidth > 0 ? window.innerWidth : 360;
-        const mainContainer = document.getElementById('main-chart-container');
-
-        const mainChart = LightweightCharts.createChart(mainContainer, {
-            width: screenWidth,
-            height: 300,
-            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-            timeScale: { borderColor: '#1e293b', timeVisible: true }
-        });
-
-        let mainSeries = mainChart.addCandlestickSeries({
-            upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
-        });
-        
-        let lineSeries1 = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, title: 'Activo 1' });
-        let compSeries = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, title: 'Activo 2' });
-        let smaSeries = mainChart.addLineSeries({ color: '#60a5fa', lineWidth: 1.5, title: 'SMA 200' });
-        let emaSeries = mainChart.addLineSeries({ color: '#e879f9', lineWidth: 1.5, title: 'EMA 50' });
-        let vwapSeries = mainChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: 'VWAP' });
-        let sarSeries = mainChart.addLineSeries({ color: '#facc15', lineWidth: 0, pointMarkersVisible: true, pointMarkersRadius: 2, title: 'Parabolic SAR' });
-        let bollingerUpper = mainChart.addLineSeries({ color: 'rgba(148, 163, 184, 0.4)', lineWidth: 1 });
-        let bollingerLower = mainChart.addLineSeries({ color: 'rgba(148, 163, 184, 0.4)', lineWidth: 1 });
-
-        // Subpaneles
-        function createSubChart(containerId) {
-            const container = document.getElementById(containerId);
-            return LightweightCharts.createChart(container, {
-                width: screenWidth, height: 80,
-                layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-                grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-                timeScale: { borderColor: '#1e293b', visible: false }
-            });
-        }
-
-        const rsiChart = createSubChart('rsi-chart-container');
-        let rsiSeries = rsiChart.addLineSeries({ color: '#a855f7', lineWidth: 1.5 });
-        rsiSeries.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
-        rsiSeries.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
-
-        const macdChart = createSubChart('macd-chart-container');
-        let macdLineSeries = macdChart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5 });
-        let macdSignalSeries = macdChart.addLineSeries({ color: '#f97316', lineWidth: 1.5 });
-        let macdHistSeries = macdChart.addHistogramSeries({});
-
-        const obvChart = createSubChart('obv-chart-container');
-        let obvSeries = obvChart.addLineSeries({ color: '#10b981', lineWidth: 1.5 });
-
-        const stochChart = createSubChart('stoch-chart-container');
-        let stochKSeries = stochChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5 });
-        let stochDSeries = stochChart.addLineSeries({ color: '#f43f5e', lineWidth: 1.5 });
-        stochKSeries.createPriceLine({ price: 80, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
-        stochKSeries.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
-
-        const atrChart = createSubChart('atr-chart-container');
-        let atrSeries = atrChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5 });
-
-        // Sincronizar subpaneles
-        mainChart.timeScale().subscribeVisibleTimeRangeChange(range => {
-            if (!range) return;
-            rsiChart.timeScale().setVisibleTimeRange(range);
-            macdChart.timeScale().setVisibleTimeRange(range);
-            obvChart.timeScale().setVisibleTimeRange(range);
-            stochChart.timeScale().setVisibleTimeRange(range);
-            atrChart.timeScale().setVisibleTimeRange(range);
-        });
-
-        function startTimer() {
-            stopTimer();
-            startTime = Date.now();
-            document.getElementById('loadingOverlay').classList.remove('hidden');
-            timerInterval = setInterval(() => {
-                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                document.getElementById('timerCount').innerText = `${elapsed}s`;
-            }, 100);
-        }
-
-        function stopTimer() {
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = null;
-            document.getElementById('loadingOverlay').classList.add('hidden');
-        }
-
-        // Sistema de descarga ultraseguro con fallback instantáneo
-        async function fetchYahooData(ticker, forceRefresh = false) {
-            if (!ticker) return [];
-            
-            const cleanTicker = ticker.trim().toUpperCase();
-            const cacheKey = `market_real_${cleanTicker}`;
-            const cached = localStorage.getItem(cacheKey);
-            
-            if (!forceRefresh && cached) {
-                try {
-                    const parsed = JSON.parse(cached);
-                    if (Date.now() - parsed.timestamp < 4 * 3600 * 1000) return parsed.data;
-                } catch(e) {}
-            }
-
-            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}?range=1y&interval=1d`;
-            
-            try {
-                const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-                const response = await fetch(proxy, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                const json = await response.json();
-                const contents = JSON.parse(json.contents);
-                const parsed = parseYahooResponse(contents);
-                if (parsed.length > 0) {
-                    localStorage.setItem(cacheKey, JSON.stringify({ data: parsed, timestamp: Date.now() }));
-                    return parsed;
-                }
-            } catch (e) {
-                console.warn("Proxy ocupado, usando datos locales simulados...");
-            }
-
-            return generateFallbackData(cleanTicker);
-        }
-
-        function parseYahooResponse(contents) {
-            try {
-                const result = contents.chart.result[0];
-                const timestamps = result.timestamp;
-                const quotes = result.indicators.quote[0];
-                let formattedData = [];
-                for (let i = 0; i < timestamps.length; i++) {
-                    if (quotes.close[i] !== null && quotes.open[i] !== null) {
-                        let dateStr = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
-                        formattedData.push({
-                            time: dateStr,
-                            open: parseFloat(quotes.open[i].toFixed(2)),
-                            high: parseFloat(quotes.high[i].toFixed(2)),
-                            low: parseFloat(quotes.low[i].toFixed(2)),
-                            close: parseFloat(quotes.close[i].toFixed(2)),
-                            volume: quotes.volume && quotes.volume[i] !== null ? quotes.volume[i] : 1000000
-                        });
-                    }
-                }
-                return formattedData;
-            } catch(e) {
-                return [];
-            }
-        }
-
-        function generateFallbackData(ticker) {
-            let data = [];
-            let price = 180;
-            let date = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-            for (let i = 0; i < 365; i++) {
-                date.setDate(date.getDate() + 1);
-                price += (Math.random() - 0.48) * 3.5;
-                data.push({
-                    time: date.toISOString().split('T')[0],
-                    open: parseFloat((price - 1).toFixed(2)),
-                    high: parseFloat((price + 2.5).toFixed(2)),
-                    low: parseFloat((price - 2.5).toFixed(2)),
-                    close: parseFloat(price.toFixed(2)),
-                    volume: Math.floor(Math.random() * 5000000) + 500000
-                });
-            }
-            return data;
-        }
-
-        async function updateChart(forceRefresh = false) {
-            if (document.activeElement) document.activeElement.blur();
-
-            const t1 = document.getElementById('inputAsset1').value.trim().toUpperCase();
-            const t2 = document.getElementById('inputAsset2').value.trim().toUpperCase();
-
-            if (!t1) {
-                document.getElementById('legendInfo').innerText = "Escribe un activo (ej: TSLA)";
-                mainSeries.setData([]);
-                lineSeries1.setData([]);
-                compSeries.setData([]);
-                cachedRawData = [];
-                recalculateIndicators([]);
-                return;
-            }
-
-            startTimer();
-
-            try {
-                let data1 = await fetchYahooData(t1, forceRefresh);
-                cachedRawData = data1;
-                let data2 = (isComparing && t2) ? await fetchYahooData(t2, forceRefresh) : [];
-
-                if (!isComparing) {
-                    lineSeries1.setData([]);
-                    compSeries.setData([]);
-                    mainSeries.applyOptions({ visible: true });
-                    mainSeries.setData(data1);
-
-                    const lastVal = data1[data1.length - 1].close;
-                    document.getElementById('legendInfo').innerText = `${t1}: $${lastVal}`;
-                    recalculateIndicators(data1);
-                } else {
-                    recalculateIndicators([]);
-                    clearFibonacci();
-
-                    if (!data2 || data2.length === 0) {
-                        document.getElementById('legendInfo').innerText = `Introduce Activo 2`;
-                        stopTimer();
-                        return;
-                    }
-
-                    if (isBase100) {
-                        mainSeries.setData([]);
-                        const base1 = data1[0].close;
-                        const base2 = data2[0].close;
-
-                        const norm1 = data1.map(d => ({ time: d.time, value: (d.close / base1) * 100 }));
-                        const norm2 = data2.map(d => ({ time: d.time, value: (d.close / base2) * 100 }));
-
-                        lineSeries1.setData(norm1);
-                        compSeries.setData(norm2);
-                        document.getElementById('legendInfo').innerText = `Base 100 (${t1} vs ${t2})`;
-                    } else {
-                        mainSeries.setData([]);
-                        const lData1 = data1.map(d => ({ time: d.time, value: d.close }));
-                        const lData2 = data2.map(d => ({ time: d.time, value: d.close }));
-
-                        lineSeries1.setData(lData1);
-                        compSeries.setData(lData2);
-
-                        const last1 = data1[data1.length - 1].close;
-                        const last2 = data2[data2.length - 1].close;
-                        document.getElementById('legendInfo').innerText = `${t1}: $${last1} | ${t2}: $${last2}`;
-                    }
-                }
-            } finally {
-                stopTimer();
-                resizeCharts();
-            }
-        }
-
-        function recalculateIndicators(data) {
-            if (isComparing || !data || data.length === 0) {
-                smaSeries.setData([]); emaSeries.setData([]); vwapSeries.setData([]); sarSeries.setData([]);
-                bollingerUpper.setData([]); bollingerLower.setData([]); rsiSeries.setData([]);
-                macdLineSeries.setData([]); macdSignalSeries.setData([]); macdHistSeries.setData([]);
-                obvSeries.setData([]); stochKSeries.setData([]); stochDSeries.setData([]); atrSeries.setData([]);
-                clearFibonacci();
-                return;
-            }
-
-            // SMA 200
-            if (document.querySelector('[data-indicator="sma200"]').classList.contains('bg-blue-600')) {
-                let smaData = [];
-                for (let i = 199; i < data.length; i++) {
-                    let sum = 0;
-                    for (let j = i - 199; j <= i; j++) sum += data[j].close;
-                    smaData.push({ time: data[i].time, value: sum / 200 });
-                }
-                smaSeries.setData(smaData);
-            } else { smaSeries.setData([]); }
-
-            // EMA 50
-            if (document.querySelector('[data-indicator="ema50"]').classList.contains('bg-blue-600')) {
-                let emaData = [];
-                let k = 2 / (50 + 1);
-                let prevEma = data[0].close;
-                for (let i = 0; i < data.length; i++) {
-                    let ema = (data[i].close * k) + (prevEma * (1 - k));
-                    prevEma = ema;
-                    if (i >= 49) emaData.push({ time: data[i].time, value: ema });
-                }
-                emaSeries.setData(emaData);
-            } else { emaSeries.setData([]); }
-
-            // VWAP
-            if (document.querySelector('[data-indicator="vwap"]').classList.contains('bg-blue-600')) {
-                let vwapData = [];
-                let cumulativeTPV = 0, cumulativeVol = 0;
-                for (let i = 0; i < data.length; i++) {
-                    let typicalPrice = (data[i].high + data[i].low + data[i].close) / 3;
-                    cumulativeTPV += typicalPrice * data[i].volume;
-                    cumulativeVol += data[i].volume;
-                    vwapData.push({ time: data[i].time, value: cumulativeTPV / (cumulativeVol || 1) });
-                }
-                vwapSeries.setData(vwapData);
-            } else { vwapSeries.setData([]); }
-
-            // Parabolic SAR
-            if (document.querySelector('[data-indicator="sar"]').classList.contains('bg-blue-600')) {
-                let sarData = [];
-                if (data.length > 1) {
-                    let isRising = data[1].close >= data[0].close;
-                    let sar = isRising ? data[0].low : data[0].high;
-                    let ep = isRising ? data[0].high : data[0].low;
-                    let af = 0.02;
-
-                    for (let i = 1; i < data.length; i++) {
-                        sar = sar + af * (ep - sar);
-                        if (isRising) {
-                            if (data[i].low < sar) { isRising = false; sar = ep; ep = data[i].low; af = 0.02; }
-                            else if (data[i].high > ep) { ep = data[i].high; af = Math.min(af + 0.02, 0.2); }
-                        } else {
-                            if (data[i].high > sar) { isRising = true; sar = ep; ep = data[i].high; af = 0.02; }
-                            else if (data[i].low < ep) { ep = data[i].low; af = Math.min(af + 0.02, 0.2); }
-                        }
-                        sarData.push({ time: data[i].time, value: sar });
-                    }
-                }
-                sarSeries.setData(sarData);
-            } else { sarSeries.setData([]); }
-
-            // Bollinger
-            if (document.querySelector('[data-indicator="bollinger"]').classList.contains('bg-blue-600')) {
-                let upperData = [], lowerData = [];
-                for (let i = 19; i < data.length; i++) {
-                    let slice = data.slice(i - 19, i + 1);
-                    let sma = slice.reduce((acc, curr) => acc + curr.close, 0) / 20;
-                    let variance = slice.reduce((acc, curr) => acc + Math.pow(curr.close - sma, 2), 0) / 20;
-                    let stdDev = Math.sqrt(variance);
-                    upperData.push({ time: data[i].time, value: sma + (stdDev * 2) });
-                    lowerData.push({ time: data[i].time, value: sma - (stdDev * 2) });
-                }
-                bollingerUpper.setData(upperData);
-                bollingerLower.setData(lowerData);
-            } else { bollingerUpper.setData([]); bollingerLower.setData([]); }
-
-            // RSI (14)
-            if (document.querySelector('[data-indicator="rsi"]').classList.contains('bg-blue-600')) {
-                document.getElementById('rsi-chart-container').classList.remove('hidden');
-                let rsiData = [], gains = 0, losses = 0;
-                for (let i = 1; i <= 14; i++) {
-                    let diff = data[i].close - data[i - 1].close;
-                    if (diff >= 0) gains += diff; else losses -= diff;
-                }
-                let avgGain = gains / 14, avgLoss = losses / 14;
-                for (let i = 15; i < data.length; i++) {
-                    let diff = data[i].close - data[i - 1].close;
-                    avgGain = ((avgGain * 13) + (diff > 0 ? diff : 0)) / 14;
-                    avgLoss = ((avgLoss * 13) + (diff < 0 ? -diff : 0)) / 14;
-                    let rs = avgGain / (avgLoss || 1);
-                    rsiData.push({ time: data[i].time, value: 100 - (100 / (1 + rs)) });
-                }
-                rsiSeries.setData(rsiData);
-            } else {
-                document.getElementById('rsi-chart-container').classList.add('hidden');
-                rsiSeries.setData([]);
-            }
-
-            // MACD
-            if (document.querySelector('[data-indicator="macd"]').classList.contains('bg-blue-600')) {
-                document.getElementById('macd-chart-container').classList.remove('hidden');
-                let macdLines = [], signals = [], hists = [];
-                let k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
-                let ema12 = data[0].close, ema26 = data[0].close, signal = 0;
-
-                for (let i = 0; i < data.length; i++) {
-                    ema12 = (data[i].close * k12) + (ema12 * (1 - k12));
-                    ema26 = (data[i].close * k26) + (ema26 * (1 - k26));
-                    let macd = ema12 - ema26;
-                    
-                    if (i >= 25) {
-                        if (signals.length === 0) signal = macd;
-                        else signal = (macd * k9) + (signal * (1 - k9));
-                        let hist = macd - signal;
-                        macdLines.push({ time: data[i].time, value: macd });
-                        signals.push({ time: data[i].time, value: signal });
-                        hists.push({ time: data[i].time, value: hist, color: hist >= 0 ? '#22c55e' : '#ef4444' });
-                    }
-                }
-                macdLineSeries.setData(macdLines);
-                macdSignalSeries.setData(signals);
-                macdHistSeries.setData(hists);
-            } else {
-                document.getElementById('macd-chart-container').classList.add('hidden');
-                macdLineSeries.setData([]); macdSignalSeries.setData([]); macdHistSeries.setData([]);
-            }
-
-            // OBV
-            if (document.querySelector('[data-indicator="obv"]').classList.contains('bg-blue-600')) {
-                document.getElementById('obv-chart-container').classList.remove('hidden');
-                let obvData = [], currentOBV = 0;
-                for (let i = 0; i < data.length; i++) {
-                    if (i > 0) {
-                        if (data[i].close > data[i - 1].close) currentOBV += data[i].volume;
-                        else if (data[i].close < data[i - 1].close) currentOBV -= data[i].volume;
-                    }
-                    obvData.push({ time: data[i].time, value: currentOBV });
-                }
-                obvSeries.setData(obvData);
-            } else {
-                document.getElementById('obv-chart-container').classList.add('hidden');
-                obvSeries.setData([]);
-            }
-
-            // Estocástico
-            if (document.querySelector('[data-indicator="stoch"]').classList.contains('bg-blue-600')) {
-                document.getElementById('stoch-chart-container').classList.remove('hidden');
-                let kData = [], dRaw = [];
-                for (let i = 13; i < data.length; i++) {
-                    let slice = data.slice(i - 13, i + 1);
-                    let highMax = Math.max(...slice.map(d => d.high));
-                    let lowMin = Math.min(...slice.map(d => d.low));
-                    let k = ((data[i].close - lowMin) / ((highMax - lowMin) || 1)) * 100;
-                    kData.push({ time: data[i].time, value: k });
-                    dRaw.push(k);
-                }
-                let dData = [];
-                for (let i = 2; i < dRaw.length; i++) {
-                    let avgD = (dRaw[i] + dRaw[i - 1] + dRaw[i - 2]) / 3;
-                    dData.push({ time: kData[i].time, value: avgD });
-                }
-                stochKSeries.setData(kData);
-                stochDSeries.setData(dData);
-            } else {
-                document.getElementById('stoch-chart-container').classList.add('hidden');
-                stochKSeries.setData([]); stochDSeries.setData([]);
-            }
-
-            // ATR
-            if (document.querySelector('[data-indicator="atr"]').classList.contains('bg-blue-600')) {
-                document.getElementById('atr-chart-container').classList.remove('hidden');
-                let atrData = [], trs = [];
-                for (let i = 0; i < data.length; i++) {
-                    let tr = data[i].high - data[i].low;
-                    if (i > 0) {
-                        let hl = data[i].high - data[i].low;
-                        let hc = Math.abs(data[i].high - data[i - 1].close);
-                        let lc = Math.abs(data[i].low - data[i - 1].close);
-                        tr = Math.max(hl, hc, lc);
-                    }
-                    trs.push(tr);
-                    if (i >= 13) {
-                        let atr = trs.slice(i - 13, i + 1).reduce((a, b) => a + b, 0) / 14;
-                        atrData.push({ time: data[i].time, value: atr });
-                    }
-                }
-                atrSeries.setData(atrData);
-            } else {
-                document.getElementById('atr-chart-container').classList.add('hidden');
-                atrSeries.setData([]);
-            }
-
-            // Fibonacci
-            if (document.querySelector('[data-indicator="fibonacci"]').classList.contains('bg-blue-600')) {
-                drawFibonacci(data);
-            } else {
-                clearFibonacci();
-            }
-        }
-
-        function drawFibonacci(data) {
-            clearFibonacci();
-            let high = -Infinity, low = Infinity;
-            data.forEach(d => {
-                if (d.high > high) high = d.high;
-                if (d.low < low) low = d.low;
-            });
-            let diff = high - low;
-            let levels = {
-                "0.0% (Máx)": high,
-                "38.2%": high - (diff * 0.382),
-                "50.0%": high - (diff * 0.500),
-                "61.8% (Áureo)": high - (diff * 0.618),
-                "100.0% (Mín)": low
-            };
-
-            Object.keys(levels).forEach(lvl => {
-                let pLine = mainSeries.createPriceLine({
-                    price: levels[lvl],
-                    color: lvl.includes("61.8") ? '#f59e0b' : '#64748b',
-                    lineWidth: lvl.includes("61.8") ? 2 : 1,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
-                    title: `Fibo ${lvl}: ${levels[lvl].toFixed(2)}`
-                });
-                activeFibLines.push(pLine);
-            });
-        }
-
-        function clearFibonacci() {
-            activeFibLines.forEach(line => mainSeries.removePriceLine(line));
-            activeFibLines = [];
-        }
-
-        function resizeCharts() {
-            const w = mainContainer.clientWidth || window.innerWidth || 360;
-            const h = mainContainer.clientHeight || 300;
-            mainChart.applyOptions({ width: w, height: h });
-            
-            const subContainers = ['rsi', 'macd', 'obv', 'stoch', 'atr'];
-            const subCharts = [rsiChart, macdChart, obvChart, stochChart, atrChart];
-            
-            subContainers.forEach((id, index) => {
-                const el = document.getElementById(`${id}-chart-container`);
-                if (el && !el.classList.contains('hidden')) {
-                    subCharts[index].applyOptions({ width: w, height: 80 });
-                }
-            });
-        }
-
-        // Eventos
-        document.getElementById('searchForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            updateChart();
-        });
-
-        document.getElementById('btnToggleCompare').addEventListener('click', (e) => {
-            isComparing = !isComparing;
-            const row = document.getElementById('compareRow');
-            if (isComparing) {
-                row.classList.remove('hidden');
-                e.target.innerText = "Comparar: ON";
-                e.target.classList.add('bg-blue-600', 'text-white');
-            } else {
-                row.classList.add('hidden');
-                e.target.innerText = "Comparar: OFF";
-                e.target.classList.remove('bg-blue-600', 'text-white');
-                isBase100 = false;
-                document.getElementById('btnBase100').innerText = "Base 100: OFF";
-                document.getElementById('btnBase100').classList.remove('bg-blue-600', 'text-white');
-                lineSeries1.setData([]);
-                compSeries.setData([]);
-            }
-            resizeCharts();
-            updateChart();
-        });
-
-        document.getElementById('btnBase100').addEventListener('click', (e) => {
-            isBase100 = !isBase100;
-            e.target.innerText = isBase100 ? "Base 100: ON" : "Base 100: OFF";
-            e.target.classList.toggle('bg-blue-600');
-            e.target.classList.toggle('text-white');
-            updateChart();
-        });
-
-        document.getElementById('btnRefresh').addEventListener('click', () => {
-            updateChart(true);
-        });
-
-        document.querySelectorAll('.ind-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (isComparing) {
-                    alert("Los indicadores están optimizados para el modo de un solo activo.");
-                    return;
-                }
-                btn.classList.toggle('bg-blue-600');
-                btn.classList.toggle('text-white');
-                btn.classList.toggle('bg-slate-800');
-                btn.classList.toggle('text-slate-300');
-                
-                recalculateIndicators(cachedRawData);
-                resizeCharts();
-            });
-        });
-
-        window.addEventListener('resize', resizeCharts);
-
-        // Arranque inmediato garantizado
-        setTimeout(() => {
-            resizeCharts();
-            updateChart();
-        }, 150);
-    </script>
+<body>
+
+<header>
+  <form id="searchForm" autocomplete="off">
+    <div class="row">
+      <div class="field">
+        <span class="tag a1">A1:</span>
+        <input id="inputAsset1" type="text" value="S&amp;P 500" placeholder="S&amp;P 500, IBEX 35, AAPL…" enterkeyhint="search"
+               autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 1">
+        <button type="submit" class="go">Ir</button>
+      </div>
+      <button type="button" id="btnToggleCompare" class="pill">Comparar: OFF</button>
+    </div>
+    <div class="row hidden" id="compareRow">
+      <div class="field">
+        <span class="tag a2">A2:</span>
+        <input id="inputAsset2" type="text" placeholder="Nasdaq, DAX, MSFT…" enterkeyhint="search"
+               autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 2">
+      </div>
+      <button type="button" id="btnBase100" class="pill">Base 100: OFF</button>
+    </div>
+  </form>
+</header>
+
+<main id="wrap">
+  <div class="mainbox">
+    <div class="cbox" id="mainChart"></div>
+    <div class="legend" id="legendBox"><span id="legendInfo">Iniciando…</span></div>
+    <a class="attr" href="https://www.tradingview.com/" target="_blank" rel="noopener">Gráficos: TradingView Lightweight Charts™</a>
+    <div class="overlay hidden" id="loadingOverlay">
+      <div class="spin"></div>
+      <div>Cargando datos… <span id="timerCount">0.0s</span></div>
+    </div>
+  </div>
+  <div class="panel hidden" id="rsiPanel"><span class="plabel">RSI (14)</span><div class="cbox"></div></div>
+  <div class="panel hidden" id="macdPanel"><span class="plabel">MACD (12, 26, 9)</span><div class="cbox"></div></div>
+  <div class="panel hidden" id="obvPanel"><span class="plabel">OBV</span><div class="cbox"></div></div>
+  <div class="panel hidden" id="stochPanel"><span class="plabel">Estocástico (14, 3)</span><div class="cbox"></div></div>
+  <div class="panel hidden" id="atrPanel"><span class="plabel">ATR (14)</span><div class="cbox"></div></div>
+</main>
+
+<footer>
+  <button class="pill ind-btn" data-indicator="bollinger">Bollinger</button>
+  <button class="pill ind-btn" data-indicator="fibonacci">Fibonacci Auto</button>
+  <button class="pill ind-btn" data-indicator="sma200">SMA 200</button>
+  <button class="pill ind-btn" data-indicator="ema50">EMA 50</button>
+  <button class="pill ind-btn" data-indicator="vwap">VWAP anclado</button>
+  <button class="pill ind-btn" data-indicator="sar">Parabolic SAR</button>
+  <button class="pill ind-btn" data-indicator="rsi">RSI (14)</button>
+  <button class="pill ind-btn" data-indicator="macd">MACD</button>
+  <button class="pill ind-btn" data-indicator="obv">OBV</button>
+  <button class="pill ind-btn" data-indicator="stoch">Estocástico</button>
+  <button class="pill ind-btn" data-indicator="atr">ATR (14)</button>
+  <button class="pill" id="btnRefresh">Recargar</button>
+</footer>
+
+<script>
+'use strict';
+
+/* ================================================================
+   CONFIGURACIÓN
+   ================================================================ */
+const RANGE = '2y';              // histórico descargado (SMA 200 necesita >200 velas)
+const INTERVAL = '1d';
+const VISIBLE_BARS = 250;        // velas visibles al abrir (≈1 año)
+const CACHE_TTL_MS = 4 * 3600 * 1000;
+const FETCH_TIMEOUT_MS = 8000;
+
+// Yahoo Finance no envía cabeceras CORS: hace falta un proxy.
+// RECOMENDADO: pon aquí tu propio proxy (p. ej. un Cloudflare Worker) como PRIMERA entrada:
+//   u => `https://TU-WORKER.workers.dev/?url=${encodeURIComponent(u)}`,
+// Los proxies públicos son gratuitos y sin garantías; se prueban en orden.
+const PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+];
+
+const TICKER_RE = /^[A-Z0-9.\-=^]{1,15}$/;
+
+/* ================================================================
+   UTILIDADES DE INTERFAZ
+   ================================================================ */
+const $ = id => document.getElementById(id);
+const legend = $('legendInfo');
+const legendBox = $('legendBox');
+let legendBase = '';
+let flashTimer = null;
+
+function setLegend(text, isError) {
+  clearTimeout(flashTimer);
+  legendBase = text;
+  legend.textContent = text;
+  legendBox.classList.toggle('err', !!isError);
+}
+function flash(text) {
+  clearTimeout(flashTimer);
+  legend.textContent = text;
+  flashTimer = setTimeout(() => { legend.textContent = legendBase; }, 2500);
+}
+
+// Errores no capturados visibles en pantalla (en el móvil no hay consola)
+window.addEventListener('error', e => setLegend('Error: ' + e.message, true));
+window.addEventListener('unhandledrejection', e => setLegend('Error: ' + (e.reason && e.reason.message || e.reason), true));
+
+if (typeof LightweightCharts === 'undefined') {
+  setLegend('No se cargó la librería de gráficos (red o bloqueador de contenido).', true);
+  throw new Error('LightweightCharts no disponible');
+}
+
+let timerInterval = null;
+function startTimer() {
+  stopTimer();
+  const t0 = Date.now();
+  $('timerCount').textContent = '0.0s';
+  $('loadingOverlay').classList.remove('hidden');
+  timerInterval = setInterval(() => {
+    $('timerCount').textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
+  }, 100);
+}
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
+  $('loadingOverlay').classList.add('hidden');
+}
+
+/* ================================================================
+   INDICADORES (funciones puras: reciben arrays, devuelven arrays
+   alineados con las velas; null = sin valor todavía)
+   ================================================================ */
+/* @@IND_START */
+const nulls = n => new Array(n).fill(null);
+
+function sma(v, p) {
+  const o = nulls(v.length);
+  for (let i = p - 1; i < v.length; i++) {
+    let s = 0, ok = true;
+    for (let j = i - p + 1; j <= i; j++) {
+      if (v[j] == null) { ok = false; break; }
+      s += v[j];
+    }
+    if (ok) o[i] = s / p;
+  }
+  return o;
+}
+
+// EMA estándar: semilla = SMA de las primeras p muestras válidas consecutivas
+function ema(v, p) {
+  const o = nulls(v.length), k = 2 / (p + 1);
+  let run = 0, first = -1;
+  for (let i = 0; i < v.length; i++) {
+    run = v[i] == null ? 0 : run + 1;
+    if (run === p) { first = i; break; }
+  }
+  if (first < 0) return o;
+  let s = 0;
+  for (let j = first - p + 1; j <= first; j++) s += v[j];
+  let prev = s / p;
+  o[first] = prev;
+  for (let i = first + 1; i < v.length; i++) {
+    if (v[i] == null) continue;
+    prev = v[i] * k + prev * (1 - k);
+    o[i] = prev;
+  }
+  return o;
+}
+
+// Bandas de Bollinger (20, 2σ poblacional, como en TradingView)
+function bollinger(c, p = 20, m = 2) {
+  const up = nulls(c.length), lo = nulls(c.length);
+  for (let i = p - 1; i < c.length; i++) {
+    let s = 0;
+    for (let j = i - p + 1; j <= i; j++) s += c[j];
+    const mean = s / p;
+    let q = 0;
+    for (let j = i - p + 1; j <= i; j++) q += (c[j] - mean) ** 2;
+    const sd = Math.sqrt(q / p);
+    up[i] = mean + m * sd;
+    lo[i] = mean - m * sd;
+  }
+  return { up, lo };
+}
+
+// RSI con suavizado de Wilder
+function rsi(c, p = 14) {
+  const n = c.length, o = nulls(n);
+  if (n <= p) return o;
+  const calc = (ag, al) => al === 0 ? (ag === 0 ? 50 : 100) : 100 - 100 / (1 + ag / al);
+  let g = 0, l = 0;
+  for (let i = 1; i <= p; i++) {
+    const d = c[i] - c[i - 1];
+    if (d >= 0) g += d; else l -= d;
+  }
+  let ag = g / p, al = l / p;
+  o[p] = calc(ag, al);
+  for (let i = p + 1; i < n; i++) {
+    const d = c[i] - c[i - 1];
+    ag = (ag * (p - 1) + (d > 0 ? d : 0)) / p;
+    al = (al * (p - 1) + (d < 0 ? -d : 0)) / p;
+    o[i] = calc(ag, al);
+  }
+  return o;
+}
+
+// MACD (12, 26, 9) con señal = EMA9 del MACD
+function macd(c) {
+  const e12 = ema(c, 12), e26 = ema(c, 26);
+  const line = c.map((_, i) => (e12[i] != null && e26[i] != null) ? e12[i] - e26[i] : null);
+  const signal = ema(line, 9);
+  const hist = line.map((v, i) => (v != null && signal[i] != null) ? v - signal[i] : null);
+  return { line, signal, hist };
+}
+
+function obv(bars) {
+  let acc = 0;
+  return bars.map((b, i) => {
+    if (i > 0) {
+      if (b.close > bars[i - 1].close) acc += b.volume;
+      else if (b.close < bars[i - 1].close) acc -= b.volume;
+    }
+    return acc;
+  });
+}
+
+// Estocástico (%K 14, %D = SMA 3 de %K)
+function stoch(bars, kp = 14, dp = 3) {
+  const k = nulls(bars.length);
+  for (let i = kp - 1; i < bars.length; i++) {
+    let hh = -Infinity, ll = Infinity;
+    for (let j = i - kp + 1; j <= i; j++) {
+      if (bars[j].high > hh) hh = bars[j].high;
+      if (bars[j].low < ll) ll = bars[j].low;
+    }
+    k[i] = hh === ll ? 50 : ((bars[i].close - ll) / (hh - ll)) * 100;
+  }
+  return { k, d: sma(k, dp) };
+}
+
+// ATR con suavizado de Wilder
+function atr(bars, p = 14) {
+  const n = bars.length, o = nulls(n);
+  if (n < p) return o;
+  const tr = bars.map((b, i) => i === 0
+    ? b.high - b.low
+    : Math.max(b.high - b.low, Math.abs(b.high - bars[i - 1].close), Math.abs(b.low - bars[i - 1].close)));
+  let s = 0;
+  for (let i = 0; i < p; i++) s += tr[i];
+  o[p - 1] = s / p;
+  for (let i = p; i < n; i++) o[i] = (o[i - 1] * (p - 1) + tr[i]) / p;
+  return o;
+}
+
+// VWAP anclado: acumulado desde la vela `start` (con velas diarias no existe VWAP "de sesión")
+function vwapAnchored(bars, start) {
+  const o = nulls(bars.length);
+  let tpv = 0, vol = 0;
+  for (let i = start; i < bars.length; i++) {
+    const tp = (bars[i].high + bars[i].low + bars[i].close) / 3;
+    tpv += tp * bars[i].volume;
+    vol += bars[i].volume;
+    if (vol > 0) o[i] = tpv / vol;
+  }
+  return o;
+}
+
+// Parabolic SAR (paso 0.02, máximo 0.2) con la regla de no penetrar las 2 velas previas
+function parabolicSar(bars, step = 0.02, max = 0.2) {
+  const n = bars.length, o = nulls(n);
+  if (n < 2) return o;
+  let rising = bars[1].close >= bars[0].close;
+  let sar = rising ? bars[0].low : bars[0].high;
+  let ep = rising ? bars[0].high : bars[0].low;
+  let af = step;
+  for (let i = 1; i < n; i++) {
+    sar = sar + af * (ep - sar);
+    const j = i >= 2 ? i - 2 : i - 1;
+    if (rising) {
+      sar = Math.min(sar, bars[i - 1].low, bars[j].low);
+      if (bars[i].low < sar) { rising = false; sar = ep; ep = bars[i].low; af = step; }
+      else if (bars[i].high > ep) { ep = bars[i].high; af = Math.min(af + step, max); }
+    } else {
+      sar = Math.max(sar, bars[i - 1].high, bars[j].high);
+      if (bars[i].high > sar) { rising = true; sar = ep; ep = bars[i].high; af = step; }
+      else if (bars[i].low < ep) { ep = bars[i].low; af = Math.min(af + step, max); }
+    }
+    o[i] = sar;
+  }
+  return o;
+}
+/* @@IND_END */
+
+/* ================================================================
+   DATOS: Yahoo Finance vía proxy, con caché. NUNCA se inventan datos.
+   ================================================================ */
+function cacheGet(key) {
+  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
+}
+function cacheSet(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* almacenamiento lleno o bloqueado */ }
+}
+
+async function fetchJSON(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return null; }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function definitiveError(msg) { const e = new Error(msg); e.definitive = true; return e; }
+
+function parseYahoo(json) {
+  const chart = json && json.chart;
+  if (!chart) throw new Error('Respuesta inesperada del proveedor');
+  if (chart.error) throw definitiveError(chart.error.description || 'Ticker no encontrado');
+  const r = chart.result && chart.result[0];
+  if (!r || !r.timestamp || !r.indicators || !r.indicators.quote || !r.indicators.quote[0]) {
+    throw definitiveError('Sin datos para ese ticker');
+  }
+  const q = r.indicators.quote[0];
+  // Fecha en hora local del mercado (gmtoffset) para no desplazar velas de Asia/Oceanía
+  const off = r.meta && Number.isFinite(r.meta.gmtoffset) ? r.meta.gmtoffset : 0;
+  const byDate = new Map();
+  r.timestamp.forEach((ts, i) => {
+    const o = q.open[i], h = q.high[i], l = q.low[i], c = q.close[i];
+    if ([o, h, l, c].some(v => v == null || !isFinite(v))) return;
+    const time = new Date((ts + off) * 1000).toISOString().slice(0, 10);
+    const vol = q.volume && q.volume[i] != null ? q.volume[i] : 0;
+    byDate.set(time, { time, open: o, high: h, low: l, close: c, volume: vol });   // misma fecha: gana la última
+  });
+  const bars = [...byDate.values()].sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
+  if (bars.length < 2) throw definitiveError('Datos insuficientes para ese ticker');
+  const meta = r.meta || {};
+  return { bars, currency: meta.currency || '', name: meta.longName || meta.shortName || '', type: meta.instrumentType || '' };
+}
+
+async function getMarketData(ticker, force) {
+  const key = 'mkt2_' + ticker;
+  const cached = cacheGet(key);
+  if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
+    return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
+  }
+  const target = 'https://query1.finance.yahoo.com/v8/finance/chart/' +
+    encodeURIComponent(ticker) + '?range=' + RANGE + '&interval=' + INTERVAL;
+  let lastErr = null;
+  for (const mk of PROXIES) {
+    try {
+      const parsed = parseYahoo(await fetchJSON(mk(target)));
+      cacheSet(key, { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, ts: Date.now() });
+      return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'red' };
+    } catch (e) {
+      if (e.definitive) throw e;          // ticker inválido: no tiene sentido reintentar
+      lastErr = e;
+      console.warn('Proxy fallido:', e.message);
+    }
+  }
+  if (cached && cached.bars && cached.bars.length) {
+    return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché antigua' };
+  }
+  const why = !lastErr ? 'sin respuesta' : (lastErr.name === 'AbortError' ? 'tiempo agotado' : lastErr.message);
+  throw new Error('No se pudieron descargar los datos de ' + ticker + ' (' + why + ').');
+}
+
+/* ================================================================
+   GRÁFICOS
+   ================================================================ */
+const CT = LightweightCharts;
+const tsOpts = { borderColor: '#1e293b', rightOffset: 4, timeVisible: false };
+const baseOpts = {
+  layout: { background: { type: CT.ColorType.Solid, color: '#020617' }, textColor: '#94a3b8' },
+  grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+  rightPriceScale: { borderColor: '#1e293b', minimumWidth: 64 },
+  crosshair: { mode: CT.CrosshairMode.Normal },
+};
+function makeChart(box, timeScale) {
+  return CT.createChart(box, Object.assign({
+    width: box.clientWidth || 300,
+    height: box.clientHeight || 200,
+    timeScale,
+  }, baseOpts));
+}
+
+const mainChart = makeChart($('mainChart'), tsOpts);
+if (typeof mainChart.addCandlestickSeries !== 'function') {
+  setLegend('Versión incompatible de la librería de gráficos (se requiere v4).', true);
+  throw new Error('lightweight-charts: se esperaba v4');
+}
+
+const mainSeries = mainChart.addCandlestickSeries({
+  upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+  wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+});
+const line1 = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, priceLineVisible: false });
+const line2 = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false });
+const ov = {
+  sma:   mainChart.addLineSeries({ color: '#60a5fa', lineWidth: 1, title: 'SMA 200', priceLineVisible: false }),
+  ema:   mainChart.addLineSeries({ color: '#e879f9', lineWidth: 1, title: 'EMA 50',  priceLineVisible: false }),
+  vwap:  mainChart.addLineSeries({ color: '#38bdf8', lineWidth: 1, title: 'VWAP',    priceLineVisible: false }),
+  sar:   mainChart.addLineSeries({ color: '#facc15', lineWidth: 1, lineVisible: false,
+           pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false }),
+  bbUp:  mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  bbLo:  mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+};
+const mainSeriesAll = [mainSeries, line1, line2, ov.sma, ov.ema, ov.vwap, ov.sar, ov.bbUp, ov.bbLo];
+
+// Subpaneles
+const subs = {};
+['rsi', 'macd', 'obv', 'stoch', 'atr'].forEach(k => {
+  const panel = $(k + 'Panel');
+  const box = panel.querySelector('.cbox');
+  subs[k] = { key: k, panel, box, chart: makeChart(box, Object.assign({}, tsOpts, { visible: false })) };
+});
+const fixed100 = { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) };
+const dash = CT.LineStyle.Dashed;
+
+const rsiS = subs.rsi.chart.addLineSeries(Object.assign({ color: '#a855f7', lineWidth: 2, priceLineVisible: false }, fixed100));
+rsiS.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: dash, axisLabelVisible: false });
+rsiS.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: dash, axisLabelVisible: false });
+
+const macdL = subs.macd.chart.addLineSeries({ color: '#3b82f6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+const macdS = subs.macd.chart.addLineSeries({ color: '#f97316', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+const macdH = subs.macd.chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+
+const obvS = subs.obv.chart.addLineSeries({ color: '#10b981', lineWidth: 2, priceLineVisible: false });
+
+const stK = subs.stoch.chart.addLineSeries(Object.assign({ color: '#38bdf8', lineWidth: 1, priceLineVisible: false }, fixed100));
+const stD = subs.stoch.chart.addLineSeries(Object.assign({ color: '#f43f5e', lineWidth: 1, priceLineVisible: false }, fixed100));
+stK.createPriceLine({ price: 80, color: '#ef4444', lineWidth: 1, lineStyle: dash, axisLabelVisible: false });
+stK.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: dash, axisLabelVisible: false });
+
+const atrS = subs.atr.chart.addLineSeries({ color: '#fbbf24', lineWidth: 2, priceLineVisible: false });
+
+/* --- Redimensionado (ResizeObserver) y sincronización de la escala temporal --- */
+const fitters = [{ chart: mainChart, box: $('mainChart') }].concat(Object.values(subs));
+let syncing = false;
+
+function fit(f) {
+  const w = f.box.clientWidth, h = f.box.clientHeight;
+  if (w > 0 && h > 0) f.chart.applyOptions({ width: w, height: h });
+}
+function syncSubs() {
+  const r = mainChart.timeScale().getVisibleLogicalRange();
+  if (!r) return;
+  syncing = true;
+  try {
+    Object.values(subs).forEach(s => {
+      if (!s.panel.classList.contains('hidden')) s.chart.timeScale().setVisibleLogicalRange(r);
+    });
+  } catch { /* gráfico sin datos todavía */ } finally { syncing = false; }
+}
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(entries => {
+    entries.forEach(en => { const f = fitters.find(x => x.box === en.target); if (f) fit(f); });
+    syncSubs();
+  });
+  fitters.forEach(f => ro.observe(f.box));
+}
+window.addEventListener('resize', () => { fitters.forEach(fit); syncSubs(); });
+
+// Todas las series de un gráfico tienen el mismo nº de puntos (relleno con "whitespace"),
+// por lo que el rango lógico es idéntico entre paneles.
+const syncList = fitters.map(f => ({ chart: f.chart, panel: f.panel || null }));
+syncList.forEach(src => {
+  src.chart.timeScale().subscribeVisibleLogicalRangeChange(r => {
+    if (syncing || !r) return;
+    if (src.panel && src.panel.classList.contains('hidden')) return;
+    syncing = true;
+    try {
+      syncList.forEach(dst => {
+        if (dst === src) return;
+        if (dst.panel && dst.panel.classList.contains('hidden')) return;
+        dst.chart.timeScale().setVisibleLogicalRange(r);
+      });
+    } catch { /* ignorar */ } finally { syncing = false; }
+  });
+});
+
+/* ================================================================
+   ESTADO Y RENDER
+   ================================================================ */
+const state = { comparing: false, base100: false, active: new Set(), bars: [], reqId: 0 };
+let fibLines = [];
+
+const toLine = (bars, vals) => bars.map((b, i) =>
+  Number.isFinite(vals[i]) ? { time: b.time, value: vals[i] } : { time: b.time });
+const toHist = (bars, vals) => bars.map((b, i) =>
+  Number.isFinite(vals[i]) ? { time: b.time, value: vals[i], color: vals[i] >= 0 ? '#22c55e' : '#ef4444' } : { time: b.time });
+
+const priceDecimals = p => p >= 10 ? 2 : p >= 1 ? 3 : 6;
+const fmt = v => Number(v).toFixed(priceDecimals(Math.abs(v)));
+function applyPrecision(price) {
+  const d = priceDecimals(price);
+  const priceFormat = { type: 'price', precision: d, minMove: Math.pow(10, -d) };
+  mainSeriesAll.forEach(s => s.applyOptions({ priceFormat }));
+}
+
+function clearFib() {
+  fibLines.forEach(l => { try { mainSeries.removePriceLine(l); } catch { /* ya eliminada */ } });
+  fibLines = [];
+}
+function drawFib(bars) {
+  clearFib();
+  let hi = -Infinity, lo = Infinity;
+  bars.forEach(b => { if (b.high > hi) hi = b.high; if (b.low < lo) lo = b.low; });
+  const d = hi - lo;
+  const levels = [
+    ['0% (máx)', hi], ['38.2%', hi - d * 0.382], ['50%', hi - d * 0.5],
+    ['61.8%', hi - d * 0.618], ['100% (mín)', lo],
+  ];
+  levels.forEach(([name, price]) => {
+    const gold = name.startsWith('61.8');
+    fibLines.push(mainSeries.createPriceLine({
+      price, color: gold ? '#f59e0b' : '#64748b', lineWidth: gold ? 2 : 1, lineStyle: dash,
+      axisLabelVisible: true, title: 'Fib ' + name,
+    }));
+  });
+}
+
+function setPanel(key, show) { subs[key].panel.classList.toggle('hidden', !show); }
+
+// Recalcula todos los indicadores a partir de state.bars
+function recalc() {
+  const bars = state.bars, n = bars.length;
+  const on = k => !state.comparing && n > 0 && state.active.has(k);
+  const closes = bars.map(b => b.close);
+  const put = (series, k, fn) => series.setData(on(k) ? fn() : []);
+
+  put(ov.sma, 'sma200', () => toLine(bars, sma(closes, 200)));
+  put(ov.ema, 'ema50',  () => toLine(bars, ema(closes, 50)));
+  put(ov.vwap, 'vwap',  () => toLine(bars, vwapAnchored(bars, Math.max(0, n - VISIBLE_BARS))));
+  put(ov.sar, 'sar',    () => toLine(bars, parabolicSar(bars)));
+  if (on('bollinger')) {
+    const bb = bollinger(closes);
+    ov.bbUp.setData(toLine(bars, bb.up));
+    ov.bbLo.setData(toLine(bars, bb.lo));
+  } else { ov.bbUp.setData([]); ov.bbLo.setData([]); }
+
+  clearFib();
+  if (on('fibonacci')) drawFib(bars.slice(-VISIBLE_BARS));
+
+  const showRsi = on('rsi');
+  setPanel('rsi', showRsi);
+  rsiS.setData(showRsi ? toLine(bars, rsi(closes)) : []);
+
+  const showMacd = on('macd');
+  setPanel('macd', showMacd);
+  if (showMacd) {
+    const m = macd(closes);
+    macdL.setData(toLine(bars, m.line));
+    macdS.setData(toLine(bars, m.signal));
+    macdH.setData(toHist(bars, m.hist));
+  } else { macdL.setData([]); macdS.setData([]); macdH.setData([]); }
+
+  const showObv = on('obv');
+  setPanel('obv', showObv);
+  obvS.setData(showObv ? toLine(bars, obv(bars)) : []);
+
+  const showSt = on('stoch');
+  setPanel('stoch', showSt);
+  if (showSt) {
+    const s = stoch(bars);
+    stK.setData(toLine(bars, s.k));
+    stD.setData(toLine(bars, s.d));
+  } else { stK.setData([]); stD.setData([]); }
+
+  const showAtr = on('atr');
+  setPanel('atr', showAtr);
+  atrS.setData(showAtr ? toLine(bars, atr(bars)) : []);
+
+  fitters.forEach(fit);
+  syncSubs();
+}
+
+function clearAll() {
+  state.bars = [];
+  mainSeries.setData([]); line1.setData([]); line2.setData([]);
+  recalc();
+}
+
+function showRecent(n) {
+  try {
+    mainChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - VISIBLE_BARS) - 0.5, to: n + 4 });
+  } catch { /* sin datos */ }
+}
+
+function renderSingle(d, t) {
+  state.bars = d.bars;
+  line1.setData([]); line2.setData([]);
+  const last = d.bars[d.bars.length - 1];
+  applyPrecision(last.close);
+  mainSeries.setData(d.bars);
+  recalc();
+  showRecent(d.bars.length);
+  const unit = d.type === 'INDEX' ? 'pts' : d.currency;
+  const noVol = d.bars.some(b => b.volume > 0) ? '' : ' · sin volumen: OBV y VWAP no disponibles';
+  setLegend(`${t}${d.name ? ' (' + d.name + ')' : ''}: ${fmt(last.close)} ${unit} · ${last.time} · ${d.source}${noVol}`);
+}
+
+function renderCompare(d1, t1, d2, t2) {
+  state.bars = [];
+  mainSeries.setData([]);
+  recalc();                                   // limpia indicadores y paneles
+  line1.applyOptions({ title: t1 });
+  line2.applyOptions({ title: t2 });
+  const srcNote = (d1.source !== 'red' || d2.source !== 'red') ? ` · ${d1.source}/${d2.source}` : '';
+
+  if (state.base100) {
+    let a = d1.bars.slice(-VISIBLE_BARS), b = d2.bars.slice(-VISIBLE_BARS);
+    const start = a[0].time > b[0].time ? a[0].time : b[0].time;   // primera fecha común
+    a = a.filter(x => x.time >= start);
+    b = b.filter(x => x.time >= start);
+    if (!a.length || !b.length) throw new Error('Los dos activos no tienen fechas en común.');
+    applyPrecision(100);
+    line1.setData(a.map(x => ({ time: x.time, value: x.close / a[0].close * 100 })));
+    line2.setData(b.map(x => ({ time: x.time, value: x.close / b[0].close * 100 })));
+    showRecent(a.length);
+    setLegend(`Base 100 desde ${start}: ${t1} vs ${t2}${srcNote}`);
+  } else {
+    const l1 = d1.bars[d1.bars.length - 1], l2 = d2.bars[d2.bars.length - 1];
+    applyPrecision(Math.min(l1.close, l2.close));
+    line1.setData(d1.bars.map(x => ({ time: x.time, value: x.close })));
+    line2.setData(d2.bars.map(x => ({ time: x.time, value: x.close })));
+    showRecent(Math.max(d1.bars.length, d2.bars.length));
+    const u1 = d1.type === 'INDEX' ? 'pts' : d1.currency, u2 = d2.type === 'INDEX' ? 'pts' : d2.currency;
+    const mixed = u1 && u2 && u1 !== u2;
+    setLegend(`${t1}: ${fmt(l1.close)} ${u1} | ${t2}: ${fmt(l2.close)} ${u2}` +
+      (mixed ? ' · monedas distintas: usa Base 100' : '') + srcNote);
+  }
+}
+
+/* @@ALIAS_START */
+// Atajos locales (funcionan sin red). Símbolos de Yahoo Finance.
+const INDEX_ALIASES = [
+  { symbol: '^GSPC',     label: 'S&P 500',            names: ['S&P 500', 'SP500', 'S&P', 'SPX'] },
+  { symbol: '^IXIC',     label: 'Nasdaq Composite',   names: ['Nasdaq', 'Nasdaq Composite', 'IXIC'] },
+  { symbol: '^NDX',      label: 'Nasdaq 100',         names: ['Nasdaq 100', 'NDX'] },
+  { symbol: '^DJI',      label: 'Dow Jones',          names: ['Dow Jones', 'DJIA', 'DJI'] },
+  { symbol: '^RUT',      label: 'Russell 2000',       names: ['Russell 2000', 'Russell', 'RUT'] },
+  { symbol: '^VIX',      label: 'VIX (volatilidad)',  names: ['VIX', 'Volatilidad'] },
+  { symbol: '^IBEX',     label: 'IBEX 35',            names: ['IBEX 35', 'IBEX', 'IBEX35'] },
+  { symbol: '^GDAXI',    label: 'DAX 40',             names: ['DAX', 'DAX 40', 'DAX40', 'GDAXI'] },
+  { symbol: '^FCHI',     label: 'CAC 40',             names: ['CAC 40', 'CAC', 'CAC40'] },
+  { symbol: '^FTSE',     label: 'FTSE 100',           names: ['FTSE 100', 'FTSE', 'FTSE100'] },
+  { symbol: 'FTSEMIB.MI', label: 'FTSE MIB (Italia)', names: ['FTSE MIB', 'MIB', 'FTSEMIB'] },
+  { symbol: '^STOXX50E', label: 'Euro Stoxx 50',      names: ['Euro Stoxx 50', 'Eurostoxx', 'Eurostoxx 50', 'STOXX50'] },
+  { symbol: '^AEX',      label: 'AEX (Países Bajos)', names: ['AEX'] },
+  { symbol: '^SSMI',     label: 'SMI (Suiza)',        names: ['SMI', 'Swiss Market Index'] },
+  { symbol: '^N225',     label: 'Nikkei 225',         names: ['Nikkei', 'Nikkei 225', 'N225'] },
+  { symbol: '^HSI',      label: 'Hang Seng',          names: ['Hang Seng', 'HSI'] },
+  { symbol: '000001.SS', label: 'Shanghai Composite', names: ['Shanghai', 'Shanghai Composite'] },
+  { symbol: '^KS11',     label: 'KOSPI',              names: ['KOSPI'] },
+  { symbol: '^NSEI',     label: 'Nifty 50',           names: ['Nifty', 'Nifty 50'] },
+  { symbol: '^BSESN',    label: 'Sensex',             names: ['Sensex'] },
+  { symbol: '^AXJO',     label: 'ASX 200',            names: ['ASX 200', 'ASX200', 'AXJO'] },
+  { symbol: '^GSPTSE',   label: 'S&P/TSX (Canadá)',   names: ['TSX', 'S&P TSX'] },
+  { symbol: '^BVSP',     label: 'Bovespa',            names: ['Bovespa', 'Ibovespa'] },
+];
+const normName = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+function localSuggestions(q) {
+  const n = normName(q);
+  if (n.length < 2) return [];
+  return INDEX_ALIASES
+    .filter(a => [a.label].concat(a.names).some(x =>
+      normName(x).startsWith(n) || x.split(/\s+/).some(w => normName(w).startsWith(n))))
+    .map(a => ({ symbol: a.symbol, name: a.label, type: 'INDEX', exch: '' }));
+}
+
+// Convierte lo que escribe el usuario en un símbolo de Yahoo:
+// 1) símbolo elegido de la lista → tal cual; 2) alias exacto (nombre de índice); 3) formato de ticker → tal cual;
+// 4) cualquier otro texto → búsqueda en Yahoo (primer resultado)
+async function resolveSymbol(raw, input) {
+  if (input && input.dataset.picked && input.dataset.picked === raw) return raw;
+  const n = normName(raw);
+  const al = INDEX_ALIASES.find(a => a.names.some(x => normName(x) === n));
+  if (al) return al.symbol;
+  const up = raw.toUpperCase();
+  if (TICKER_RE.test(up)) return up;
+  const res = await searchSymbols(raw);
+  if (!res.length) throw new Error('No se encontró «' + raw + '». Prueba con otro nombre o con el símbolo de Yahoo (ej: ^GSPC).');
+  return res[0].symbol;
+}
+/* @@ALIAS_END */
+
+async function searchSymbols(q) {
+  const target = 'https://query1.finance.yahoo.com/v1/finance/search?q=' + encodeURIComponent(q) +
+    '&quotesCount=8&newsCount=0&listsCount=0';
+  for (const mk of PROXIES) {
+    try {
+      const json = await fetchJSON(mk(target));
+      if (json && Array.isArray(json.quotes)) {
+        return json.quotes.filter(x => x.symbol).map(x => ({
+          symbol: x.symbol, name: x.longname || x.shortname || '', type: x.quoteType || '', exch: x.exchDisp || '',
+        }));
+      }
+    } catch (e) { console.warn('Búsqueda fallida:', e.message); }
+  }
+  throw new Error('No se pudo buscar «' + q + '» (proveedor no disponible). Usa el símbolo de Yahoo, ej: ^GSPC.');
+}
+
+/* --- Lista de sugerencias bajo cada campo --- */
+const suggestLists = [];
+function hideSuggest() { suggestLists.forEach(u => u.classList.add('hidden')); }
+
+function attachSuggest(input) {
+  const ul = document.createElement('ul');
+  ul.className = 'suggest hidden';
+  input.parentElement.appendChild(ul);
+  suggestLists.push(ul);
+  let timer = null, seq = 0;
+
+  const pick = it => {
+    input.value = it.symbol;
+    input.dataset.picked = it.symbol;
+    hideSuggest();
+    updateChart();
+  };
+  const show = items => {
+    ul.textContent = '';
+    items.slice(0, 8).forEach(it => {
+      const li = document.createElement('li');
+      const sym = document.createElement('b');
+      sym.textContent = it.symbol;
+      const desc = document.createElement('span');
+      desc.textContent = [it.name, it.type, it.exch].filter(Boolean).join(' · ');
+      li.append(sym, desc);
+      li.addEventListener('pointerdown', e => { e.preventDefault(); pick(it); });
+      ul.appendChild(li);
+    });
+    ul.classList.toggle('hidden', items.length === 0);
+  };
+
+  input.addEventListener('input', () => {
+    delete input.dataset.picked;
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { ul.classList.add('hidden'); return; }
+    const local = localSuggestions(q);
+    show(local);
+    const my = ++seq;
+    timer = setTimeout(async () => {
+      try {
+        const remote = await searchSymbols(q);
+        if (my !== seq || document.activeElement !== input) return;
+        const seen = new Set(local.map(x => x.symbol));
+        show(local.concat(remote.filter(x => !seen.has(x.symbol))));
+      } catch { /* sin red: se quedan las sugerencias locales */ }
+    }, 400);
+  });
+  input.addEventListener('blur', () => setTimeout(() => ul.classList.add('hidden'), 150));
+}
+
+async function updateChart(force = false) {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  hideSuggest();
+  const in1 = $('inputAsset1'), in2 = $('inputAsset2');
+  const raw1 = in1.value.trim(), raw2 = in2.value.trim();
+  const my = ++state.reqId;                    // descarta respuestas de peticiones antiguas
+
+  if (!raw1) { clearAll(); setLegend('Escribe un activo o índice (ej: S&P 500, IBEX 35, AAPL)'); stopTimer(); return; }
+
+  startTimer();
+  try {
+    const t1 = await resolveSymbol(raw1, in1);
+    if (my !== state.reqId) return;
+    in1.value = t1; in1.dataset.picked = t1;
+    const t2 = (state.comparing && raw2) ? await resolveSymbol(raw2, in2) : '';
+    if (my !== state.reqId) return;
+    if (t2) { in2.value = t2; in2.dataset.picked = t2; }
+    const d1 = await getMarketData(t1, force);
+    if (my !== state.reqId) return;
+    if (!state.comparing) { renderSingle(d1, t1); return; }
+    if (!t2) {
+      renderSingle(d1, t1);
+      setLegend(`${t1}: introduce el Activo 2 para comparar`);
+      return;
+    }
+    const d2 = await getMarketData(t2, force);
+    if (my !== state.reqId) return;
+    renderCompare(d1, t1, d2, t2);
+  } catch (err) {
+    if (my !== state.reqId) return;
+    clearAll();                                // no dejar a la vista un gráfico que no corresponde
+    setLegend(err.message || String(err), true);
+  } finally {
+    if (my === state.reqId) stopTimer();
+  }
+}
+
+/* ================================================================
+   EVENTOS
+   ================================================================ */
+$('searchForm').addEventListener('submit', e => { e.preventDefault(); updateChart(); });
+
+$('btnToggleCompare').addEventListener('click', e => {
+  state.comparing = !state.comparing;
+  const btn = e.currentTarget;
+  btn.textContent = 'Comparar: ' + (state.comparing ? 'ON' : 'OFF');
+  btn.classList.toggle('on', state.comparing);
+  $('compareRow').classList.toggle('hidden', !state.comparing);
+  if (!state.comparing) {
+    state.base100 = false;
+    $('btnBase100').textContent = 'Base 100: OFF';
+    $('btnBase100').classList.remove('on');
+    line1.setData([]); line2.setData([]);
+  }
+  fitters.forEach(fit);
+  updateChart();
+});
+
+$('btnBase100').addEventListener('click', e => {
+  state.base100 = !state.base100;
+  e.currentTarget.textContent = 'Base 100: ' + (state.base100 ? 'ON' : 'OFF');
+  e.currentTarget.classList.toggle('on', state.base100);
+  updateChart();
+});
+
+$('btnRefresh').addEventListener('click', () => updateChart(true));
+
+document.querySelectorAll('.ind-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (state.comparing) { flash('Los indicadores solo están disponibles con un activo.'); return; }
+    const k = btn.dataset.indicator;
+    if (state.active.has(k)) state.active.delete(k); else state.active.add(k);
+    btn.classList.toggle('on', state.active.has(k));
+    recalc();
+  });
+});
+
+/* ================================================================
+   ARRANQUE
+   ================================================================ */
+fitters.forEach(fit);
+attachSuggest($('inputAsset1'));
+attachSuggest($('inputAsset2'));
+updateChart();
+</script>
 </body>
 </html>
