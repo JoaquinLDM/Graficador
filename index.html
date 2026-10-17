@@ -100,7 +100,7 @@ footer::-webkit-scrollbar{display:none}
 <header>
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
-    <span class="version-tag" id="appVersionLabel">v2.2-AlphaVantage</span>
+    <span class="version-tag" id="appVersionLabel">v2.3-AlphaVantage</span>
   </div>
   <form id="searchForm" autocomplete="off">
     <div class="row">
@@ -143,6 +143,7 @@ footer::-webkit-scrollbar{display:none}
 
 <footer>
   <button class="pill ind-btn" data-indicator="bollinger">Bollinger</button>
+  <button class="pill ind-btn" data-indicator="frama">FRAMA + BB</button>
   <button class="pill ind-btn" data-indicator="fibonacci">Fibonacci Auto</button>
   <button class="pill ind-btn" data-indicator="sma200">SMA 200</button>
   <button class="pill ind-btn" data-indicator="ema50">EMA 50</button>
@@ -159,7 +160,7 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.2-AlphaVantage';
+const APP_VERSION = 'v2.3-AlphaVantage';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
@@ -211,7 +212,7 @@ function stopTimer() {
 }
 
 /* ================================================================
-   INDICADORES TÉCNICOS
+   INDICADORES TÉCNICOS (Incluyendo FRAMA y FRAMA Bollinger)
    ================================================================ */
 const nulls = n => new Array(n).fill(null);
 
@@ -261,6 +262,69 @@ function bollinger(c, p = 20, m = 2) {
     lo[i] = mean - m * sd;
   }
   return { up, lo };
+}
+
+// FRAMA (Fractal Adaptive Moving Average - John Ehlers)
+function frama(closes, highs, lows, p = 30) {
+  const n = closes.length, o = nulls(n);
+  const half = Math.floor(p / 2);
+  if (n < p) return o;
+
+  for (let i = p - 1; i < n; i++) {
+    let h1 = -Infinity, l1 = Infinity;
+    for (let j = i - half + 1; j <= i; j++) {
+      if (highs[j] > h1) h1 = highs[j];
+      if (lows[j] < l1) l1 = lows[j];
+    }
+    const N1 = (h1 - l1) / half;
+
+    let h2 = -Infinity, l2 = Infinity;
+    for (let j = i - p + 1; j <= i - half; j++) {
+      if (highs[j] > h2) h2 = highs[j];
+      if (lows[j] < l2) l2 = lows[j];
+    }
+    const N2 = (h2 - l2) / half;
+
+    let h3 = -Infinity, l3 = Infinity;
+    for (let j = i - p + 1; j <= i; j++) {
+      if (highs[j] > h3) h3 = highs[j];
+      if (lows[j] < l3) l3 = lows[j];
+    }
+    const N3 = (h3 - l3) / p;
+
+    let dim = 1;
+    if ((N1 + N2) > 0 && N3 > 0) {
+      dim = (Math.log(N1 + N2) - Math.log(N3)) / Math.log(2);
+    }
+
+    let alpha = Math.exp(-4.6 * (dim - 1));
+    alpha = Math.max(0.01, Math.min(1, alpha));
+
+    if (i === p - 1 || o[i - 1] == null) {
+      o[i] = closes[i];
+    } else {
+      o[i] = alpha * closes[i] + (1 - alpha) * o[i - 1];
+    }
+  }
+  return o;
+}
+
+// Bandas de Bollinger basadas en FRAMA
+function framaBollinger(closes, highs, lows, p = 30, m = 2) {
+  const mid = frama(closes, highs, lows, p);
+  const up = nulls(closes.length), lo = nulls(closes.length);
+  for (let i = p - 1; i < closes.length; i++) {
+    if (mid[i] == null) continue;
+    let sumSq = 0, count = 0;
+    for (let j = i - p + 1; j <= i; j++) {
+      sumSq += (closes[j] - mid[i]) ** 2;
+      count++;
+    }
+    const sd = Math.sqrt(sumSq / count);
+    up[i] = mid[i] + m * sd;
+    lo[i] = mid[i] - m * sd;
+  }
+  return { mid, up, lo };
 }
 
 function rsi(c, p = 14) {
@@ -464,15 +528,18 @@ const mainSeries = mainChart.addCandlestickSeries({
 const line1 = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, priceLineVisible: false });
 const line2 = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false });
 const ov = {
-  sma:   mainChart.addLineSeries({ color: '#60a5fa', lineWidth: 1, title: 'SMA 200', priceLineVisible: false }),
-  ema:   mainChart.addLineSeries({ color: '#e879f9', lineWidth: 1, title: 'EMA 50',  priceLineVisible: false }),
-  vwap:  mainChart.addLineSeries({ color: '#38bdf8', lineWidth: 1, title: 'VWAP',    priceLineVisible: false }),
-  sar:   mainChart.addLineSeries({ color: '#facc15', lineWidth: 1, lineVisible: false,
-           pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false }),
-  bbUp:  mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
-  bbLo:  mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  sma:       mainChart.addLineSeries({ color: '#60a5fa', lineWidth: 1, title: 'SMA 200', priceLineVisible: false }),
+  ema:       mainChart.addLineSeries({ color: '#e879f9', lineWidth: 1, title: 'EMA 50',  priceLineVisible: false }),
+  vwap:      mainChart.addLineSeries({ color: '#38bdf8', lineWidth: 1, title: 'VWAP',    priceLineVisible: false }),
+  sar:       mainChart.addLineSeries({ color: '#facc15', lineWidth: 1, lineVisible: false,
+               pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false }),
+  bbUp:      mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  bbLo:      mainChart.addLineSeries({ color: 'rgba(148,163,184,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  framaMid:  mainChart.addLineSeries({ color: '#10b981', lineWidth: 2, title: 'FRAMA', priceLineVisible: false, lastValueVisible: false }),
+  framaUp:   mainChart.addLineSeries({ color: 'rgba(16,185,129,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  framaLo:   mainChart.addLineSeries({ color: 'rgba(16,185,129,0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
 };
-const mainSeriesAll = [mainSeries, line1, line2, ov.sma, ov.ema, ov.vwap, ov.sar, ov.bbUp, ov.bbLo];
+const mainSeriesAll = [mainSeries, line1, line2, ov.sma, ov.ema, ov.vwap, ov.sar, ov.bbUp, ov.bbLo, ov.framaMid, ov.framaUp, ov.framaLo];
 
 // Subpaneles
 const subs = {};
@@ -591,17 +658,31 @@ function recalc() {
   const bars = state.bars, n = bars.length;
   const on = k => !state.comparing && n > 0 && state.active.has(k);
   const closes = bars.map(b => b.close);
+  const highs = bars.map(b => b.high);
+  const lows = bars.map(b => b.low);
   const put = (series, k, fn) => series.setData(on(k) ? fn() : []);
 
   put(ov.sma, 'sma200', () => toLine(bars, sma(closes, 200)));
   put(ov.ema, 'ema50',  () => toLine(bars, ema(closes, 50)));
   put(ov.vwap, 'vwap',  () => toLine(bars, vwapAnchored(bars, Math.max(0, n - VISIBLE_BARS))));
   put(ov.sar, 'sar',    () => toLine(bars, parabolicSar(bars)));
+  
   if (on('bollinger')) {
     const bb = bollinger(closes);
     ov.bbUp.setData(toLine(bars, bb.up));
     ov.bbLo.setData(toLine(bars, bb.lo));
   } else { ov.bbUp.setData([]); ov.bbLo.setData([]); }
+
+  if (on('frama')) {
+    const fb = framaBollinger(closes, highs, lows);
+    ov.framaMid.setData(toLine(bars, fb.mid));
+    ov.framaUp.setData(toLine(bars, fb.up));
+    ov.framaLo.setData(toLine(bars, fb.lo));
+  } else {
+    ov.framaMid.setData([]);
+    ov.framaUp.setData([]);
+    ov.framaLo.setData([]);
+  }
 
   clearFib();
   if (on('fibonacci')) drawFib(bars.slice(-VISIBLE_BARS));
@@ -814,7 +895,6 @@ document.querySelectorAll('.ind-btn').forEach(btn => {
    ================================================================ */
 fitters.forEach(fit);
 
-// Comprobar si hay un activo anclado previamente
 const pinnedAsset = localStorage.getItem(PINNED_KEY);
 if (pinnedAsset) {
   $('inputAsset1').value = pinnedAsset;
