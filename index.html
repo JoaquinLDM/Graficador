@@ -9,71 +9,72 @@
     <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        body {
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #020617;
             touch-action: manipulation;
             -webkit-user-select: none;
             user-select: none;
-            overflow: hidden;
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 h-screen w-screen flex flex-col justify-between">
+<body class="bg-slate-950 text-slate-100 h-full w-screen flex flex-col justify-between">
 
     <!-- 1. CABECERA DE CONTROLES -->
-    <header class="bg-slate-900 border-b border-slate-800 p-2.5 flex flex-col space-y-2 shrink-0">
-        <!-- Fila 1: Activo 1 y Modo Comparación -->
-        <div class="flex items-center justify-between space-x-2">
-            <div class="flex items-center space-x-2 flex-1">
-                <span class="text-[10px] uppercase font-bold text-slate-400">Activo 1:</span>
-                <input id="inputAsset1" type="text" placeholder="Ej: AAPL, BTC-USD..." class="bg-slate-800 text-xs text-blue-400 font-bold py-1 px-2.5 rounded border border-slate-700 w-full uppercase focus:outline-none focus:border-blue-500">
+    <header class="bg-slate-900 border-b border-slate-800 p-2.5 flex flex-col space-y-2 shrink-0 z-20">
+        <form id="searchForm" action="javascript:void(0);" class="m-0 p-0 flex flex-col space-y-2">
+            <!-- Fila 1: Activo 1, Buscar y Comparar -->
+            <div class="flex items-center justify-between space-x-2">
+                <div class="flex items-center space-x-1.5 flex-1 bg-slate-800 rounded border border-slate-700 px-2 py-0.5">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">A1:</span>
+                    <input id="inputAsset1" type="text" enterkeyhint="search" placeholder="TSLA, AAPL, BTC-USD..." class="bg-transparent text-xs text-blue-400 font-bold py-1.5 w-full uppercase focus:outline-none">
+                    <button type="submit" id="btnSearchSubmit" class="bg-blue-600 text-white text-[11px] font-bold px-2 py-1 rounded shrink-0 active:bg-blue-700">
+                        Ir
+                    </button>
+                </div>
+
+                <button type="button" id="btnToggleCompare" class="bg-slate-800 text-xs font-semibold px-2.5 py-1.5 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
+                    Comparar: OFF
+                </button>
             </div>
 
-            <button id="btnToggleCompare" class="bg-slate-800 text-xs font-semibold px-3 py-1 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
-                Comparar: OFF
-            </button>
-        </div>
+            <!-- Fila 2: Activo 2 (Condicional) y Base 100 -->
+            <div id="compareRow" class="flex items-center justify-between pt-1 border-t border-slate-800/80 hidden space-x-2">
+                <div class="flex items-center space-x-1.5 flex-1 bg-slate-800 rounded border border-slate-700 px-2 py-0.5">
+                    <span class="text-[10px] uppercase font-bold text-amber-500 shrink-0">A2:</span>
+                    <input id="inputAsset2" type="text" enterkeyhint="search" placeholder="MSFT, NVDA..." class="bg-transparent text-xs text-amber-500 font-bold py-1.5 w-full uppercase focus:outline-none">
+                </div>
 
-        <!-- Fila 2: Activo 2 (Condicional) y Base 100 -->
-        <div id="compareRow" class="flex items-center justify-between pt-1 border-t border-slate-800/80 hidden space-x-2">
-            <div class="flex items-center space-x-2 flex-1">
-                <span class="text-[10px] uppercase font-bold text-amber-500">Activo 2:</span>
-                <input id="inputAsset2" type="text" placeholder="Ej: TSLA, MSFT..." class="bg-slate-800 text-xs text-amber-500 font-bold py-1 px-2.5 rounded border border-slate-700 w-full uppercase focus:outline-none focus:border-amber-500">
+                <button type="button" id="btnBase100" class="bg-slate-800 text-[10px] font-semibold px-2.5 py-1.5 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
+                    Base 100: OFF
+                </button>
             </div>
-
-            <button id="btnBase100" class="bg-slate-800 text-[10px] font-semibold px-2.5 py-1 rounded border border-slate-700 text-slate-300 active:bg-blue-600 transition shrink-0">
-                Base 100: OFF
-            </button>
-        </div>
+        </form>
     </header>
 
-    <!-- 2. ÁREA DE GRÁFICOS (MULTI-PANEL DINÁMICO) -->
-    <main class="flex-1 w-full relative bg-slate-950 flex flex-col overflow-hidden">
+    <!-- 2. ÁREA DE GRÁFICOS (GARANTIZANDO ALTURA REAL) -->
+    <main id="chart-main-wrapper" class="flex-1 w-full relative bg-slate-950 flex flex-col min-h-[300px] overflow-hidden">
         <!-- Gráfico Principal (Velas, Precios, Overlays) -->
-        <div id="main-chart-container" class="w-full flex-1 relative"></div>
+        <div id="main-chart-container" class="w-full flex-1 relative min-h-[250px]"></div>
         
-        <!-- Subpanel RSI -->
-        <div id="rsi-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
-        
-        <!-- Subpanel MACD -->
-        <div id="macd-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
-
-        <!-- Subpanel OBV -->
-        <div id="obv-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
-
-        <!-- Subpanel Estocástico -->
-        <div id="stoch-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
-
-        <!-- Subpanel ATR -->
-        <div id="atr-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden"></div>
+        <!-- Subpaneles de Indicadores -->
+        <div id="rsi-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="macd-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="obv-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="stoch-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="atr-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
 
         <!-- Leyenda Flotante -->
-        <div class="absolute top-2 left-2 pointer-events-none bg-slate-900/80 backdrop-blur-md px-2.5 py-1.5 rounded text-[10px] text-slate-400 border border-slate-800/50 z-10">
-            <span id="legendInfo">Introduce un activo para comenzar</span>
+        <div class="absolute top-2 left-2 pointer-events-none bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded text-[10px] text-slate-300 border border-slate-800/80 z-10">
+            <span id="legendInfo">Iniciando aplicación...</span>
         </div>
 
-        <!-- Indicador de Carga y Reloj -->
+        <!-- Indicador de Carga -->
         <div id="loadingOverlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 z-50 hidden">
             <div class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             <div class="text-xs font-mono text-slate-300 flex items-center space-x-1">
@@ -83,44 +84,20 @@
         </div>
     </main>
 
-    <!-- 3. FOOTER / 11 INDICADORES TÁCTILES -->
-    <footer class="h-16 bg-slate-900 border-t border-slate-800 px-3 flex items-center overflow-x-auto space-x-2 shrink-0 no-scrollbar">
-        <button data-indicator="bollinger" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            Bollinger
-        </button>
-        <button data-indicator="fibonacci" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            Fibonacci Auto
-        </button>
-        <button data-indicator="sma200" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            SMA 200
-        </button>
-        <button data-indicator="ema50" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            EMA 50
-        </button>
-        <button data-indicator="vwap" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            VWAP
-        </button>
-        <button data-indicator="sar" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            Parabolic SAR
-        </button>
-        <button data-indicator="rsi" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            RSI (14)
-        </button>
-        <button data-indicator="macd" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            MACD
-        </button>
-        <button data-indicator="obv" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            OBV
-        </button>
-        <button data-indicator="stoch" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            Estocástico
-        </button>
-        <button data-indicator="atr" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">
-            ATR (14)
-        </button>
-        <button id="btnRefresh" class="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap shadow transition">
-            Buscar / Actualizar
-        </button>
+    <!-- 3. FOOTER / INDICADORES -->
+    <footer class="h-14 bg-slate-900 border-t border-slate-800 px-3 flex items-center overflow-x-auto space-x-2 shrink-0 no-scrollbar z-20">
+        <button data-indicator="bollinger" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Bollinger</button>
+        <button data-indicator="fibonacci" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Fibonacci Auto</button>
+        <button data-indicator="sma200" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">SMA 200</button>
+        <button data-indicator="ema50" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">EMA 50</button>
+        <button data-indicator="vwap" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">VWAP</button>
+        <button data-indicator="sar" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Parabolic SAR</button>
+        <button data-indicator="rsi" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">RSI (14)</button>
+        <button data-indicator="macd" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">MACD</button>
+        <button data-indicator="obv" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">OBV</button>
+        <button data-indicator="stoch" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">Estocástico</button>
+        <button data-indicator="atr" class="ind-btn bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition">ATR (14)</button>
+        <button id="btnRefresh" class="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap shadow transition shrink-0">Recargar</button>
     </footer>
 
     <!-- LÓGICA DE LA APLICACIÓN -->
@@ -132,11 +109,20 @@
         let startTime = 0;
         let cachedRawData = [];
 
-        // 1. Gráfico Principal
+        // 1. Inicialización de Gráficos con Dimensionado Dinámico
         const mainContainer = document.getElementById('main-chart-container');
+        
+        function getContainerDimensions(container) {
+            const width = container.clientWidth || window.innerWidth || 300;
+            const height = container.clientHeight || 300;
+            return { width, height };
+        }
+
+        const initialDim = getContainerDimensions(mainContainer);
+
         const mainChart = LightweightCharts.createChart(mainContainer, {
-            width: mainContainer.clientWidth,
-            height: mainContainer.clientHeight,
+            width: initialDim.width,
+            height: initialDim.height,
             layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
             grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
             timeScale: { borderColor: '#1e293b', timeVisible: true }
@@ -155,64 +141,41 @@
         let bollingerUpper = mainChart.addLineSeries({ color: 'rgba(148, 163, 184, 0.4)', lineWidth: 1 });
         let bollingerLower = mainChart.addLineSeries({ color: 'rgba(148, 163, 184, 0.4)', lineWidth: 1 });
 
-        // 2. Subpanel RSI
-        const rsiContainer = document.getElementById('rsi-chart-container');
-        const rsiChart = LightweightCharts.createChart(rsiContainer, {
-            width: rsiContainer.clientWidth, height: rsiContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-            timeScale: { borderColor: '#1e293b', visible: false }
-        });
-        let rsiSeries = rsiChart.addLineSeries({ color: '#a855f7', lineWidth: 1.5, title: 'RSI' });
+        // Subpaneles
+        function createSubChart(containerId) {
+            const container = document.getElementById(containerId);
+            const dim = getContainerDimensions(container);
+            return LightweightCharts.createChart(container, {
+                width: dim.width, height: 96,
+                layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
+                grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
+                timeScale: { borderColor: '#1e293b', visible: false }
+            });
+        }
+
+        const rsiChart = createSubChart('rsi-chart-container');
+        let rsiSeries = rsiChart.addLineSeries({ color: '#a855f7', lineWidth: 1.5 });
         rsiSeries.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
         rsiSeries.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
 
-        // 3. Subpanel MACD
-        const macdContainer = document.getElementById('macd-chart-container');
-        const macdChart = LightweightCharts.createChart(macdContainer, {
-            width: macdContainer.clientWidth, height: macdContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-            timeScale: { borderColor: '#1e293b', visible: false }
-        });
-        let macdLineSeries = macdChart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, title: 'MACD' });
-        let macdSignalSeries = macdChart.addLineSeries({ color: '#f97316', lineWidth: 1.5, title: 'Signal' });
-        let macdHistSeries = macdChart.addHistogramSeries({ title: 'Histograma' });
+        const macdChart = createSubChart('macd-chart-container');
+        let macdLineSeries = macdChart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5 });
+        let macdSignalSeries = macdChart.addLineSeries({ color: '#f97316', lineWidth: 1.5 });
+        let macdHistSeries = macdChart.addHistogramSeries({});
 
-        // 4. Subpanel OBV
-        const obvContainer = document.getElementById('obv-chart-container');
-        const obvChart = LightweightCharts.createChart(obvContainer, {
-            width: obvContainer.clientWidth, height: obvContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-            timeScale: { borderColor: '#1e293b', visible: false }
-        });
-        let obvSeries = obvChart.addLineSeries({ color: '#10b981', lineWidth: 1.5, title: 'OBV' });
+        const obvChart = createSubChart('obv-chart-container');
+        let obvSeries = obvChart.addLineSeries({ color: '#10b981', lineWidth: 1.5 });
 
-        // 5. Subpanel Estocástico
-        const stochContainer = document.getElementById('stoch-chart-container');
-        const stochChart = LightweightCharts.createChart(stochContainer, {
-            width: stochContainer.clientWidth, height: stochContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-            timeScale: { borderColor: '#1e293b', visible: false }
-        });
-        let stochKSeries = stochChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: '%K' });
-        let stochDSeries = stochChart.addLineSeries({ color: '#f43f5e', lineWidth: 1.5, title: '%D' });
+        const stochChart = createSubChart('stoch-chart-container');
+        let stochKSeries = stochChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5 });
+        let stochDSeries = stochChart.addLineSeries({ color: '#f43f5e', lineWidth: 1.5 });
         stochKSeries.createPriceLine({ price: 80, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
         stochKSeries.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
 
-        // 6. Subpanel ATR
-        const atrContainer = document.getElementById('atr-chart-container');
-        const atrChart = LightweightCharts.createChart(atrContainer, {
-            width: atrContainer.clientWidth, height: atrContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
-            grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
-            timeScale: { borderColor: '#1e293b', visible: false }
-        });
-        let atrSeries = atrChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5, title: 'ATR' });
+        const atrChart = createSubChart('atr-chart-container');
+        let atrSeries = atrChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5 });
 
-        // Sincronización de escalas temporales entre paneles
+        // Sincronizar subpaneles
         mainChart.timeScale().subscribeVisibleTimeRangeChange(range => {
             if (!range) return;
             rsiChart.timeScale().setVisibleTimeRange(range);
@@ -222,7 +185,6 @@
             atrChart.timeScale().setVisibleTimeRange(range);
         });
 
-        // Control del Reloj
         function startTimer() {
             stopTimer();
             startTime = Date.now();
@@ -239,35 +201,66 @@
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
 
-        // Descarga de Datos Yahoo Finance / Fallback
+        // Descarga robusta con doble proxy y fallback
         async function fetchYahooData(ticker, forceRefresh = false) {
             if (!ticker) return [];
             
-            const cacheKey = `market_real_${ticker.toUpperCase()}`;
+            const cleanTicker = ticker.trim().toUpperCase();
+            const cacheKey = `market_real_${cleanTicker}`;
             const cached = localStorage.getItem(cacheKey);
             
             if (!forceRefresh && cached) {
-                const { data, timestamp } = JSON.parse(cached);
-                if (Date.now() - timestamp < 4 * 3600 * 1000) return data;
+                try {
+                    const parsed = JSON.parse(cached);
+                    if (Date.now() - parsed.timestamp < 4 * 3600 * 1000) return parsed.data;
+                } catch(e) {}
             }
 
+            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}?range=1y&interval=1d`;
+            
+            // Intento 1: Proxy Allorigins
             try {
-                const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1y&interval=1d`;
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-                
+                const proxy1 = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-                const response = await fetch(proxyUrl, { signal: controller.signal });
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const response = await fetch(proxy1, { signal: controller.signal });
                 clearTimeout(timeoutId);
-                
                 const json = await response.json();
                 const contents = JSON.parse(json.contents);
-                
+                const parsed = parseYahooResponse(contents);
+                if (parsed.length > 0) {
+                    localStorage.setItem(cacheKey, JSON.stringify({ data: parsed, timestamp: Date.now() }));
+                    return parsed;
+                }
+            } catch (e) {
+                console.warn("Proxy 1 falló, intentando Proxy 2...");
+            }
+
+            // Intento 2: Proxy Corsproxy
+            try {
+                const proxy2 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const response = await fetch(proxy2, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                const contents = await response.json();
+                const parsed = parseYahooResponse(contents);
+                if (parsed.length > 0) {
+                    localStorage.setItem(cacheKey, JSON.stringify({ data: parsed, timestamp: Date.now() }));
+                    return parsed;
+                }
+            } catch (e) {
+                console.warn("Proxy 2 falló. Generando datos simulados...");
+            }
+
+            return generateFallbackData(cleanTicker);
+        }
+
+        function parseYahooResponse(contents) {
+            try {
                 const result = contents.chart.result[0];
                 const timestamps = result.timestamp;
                 const quotes = result.indicators.quote[0];
-
                 let formattedData = [];
                 for (let i = 0; i < timestamps.length; i++) {
                     if (quotes.close[i] !== null && quotes.open[i] !== null) {
@@ -282,30 +275,24 @@
                         });
                     }
                 }
-
-                if (formattedData.length > 0) {
-                    localStorage.setItem(cacheKey, JSON.stringify({ data: formattedData, timestamp: Date.now() }));
-                    return formattedData;
-                }
-                throw new Error("Sin datos");
-            } catch (error) {
-                console.warn("Usando datos de prueba para:", ticker);
-                return generateFallbackData(ticker);
+                return formattedData;
+            } catch(e) {
+                return [];
             }
         }
 
         function generateFallbackData(ticker) {
             let data = [];
-            let price = 100;
+            let price = 180;
             let date = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
             for (let i = 0; i < 365; i++) {
                 date.setDate(date.getDate() + 1);
-                price += (Math.random() - 0.48) * 2;
+                price += (Math.random() - 0.48) * 3.5;
                 data.push({
                     time: date.toISOString().split('T')[0],
                     open: parseFloat((price - 1).toFixed(2)),
-                    high: parseFloat((price + 2).toFixed(2)),
-                    low: parseFloat((price - 2).toFixed(2)),
+                    high: parseFloat((price + 2.5).toFixed(2)),
+                    low: parseFloat((price - 2.5).toFixed(2)),
                     close: parseFloat(price.toFixed(2)),
                     volume: Math.floor(Math.random() * 5000000) + 500000
                 });
@@ -313,13 +300,14 @@
             return data;
         }
 
-        // Actualizar Gráfico
         async function updateChart(forceRefresh = false) {
+            if (document.activeElement) document.activeElement.blur();
+
             const t1 = document.getElementById('inputAsset1').value.trim().toUpperCase();
             const t2 = document.getElementById('inputAsset2').value.trim().toUpperCase();
 
             if (!t1) {
-                document.getElementById('legendInfo').innerText = "Introduce un activo para comenzar";
+                document.getElementById('legendInfo').innerText = "Escribe un activo (ej: TSLA)";
                 mainSeries.setData([]);
                 lineSeries1.setData([]);
                 compSeries.setData([]);
@@ -349,7 +337,7 @@
                     clearFibonacci();
 
                     if (!data2 || data2.length === 0) {
-                        document.getElementById('legendInfo').innerText = `Introduce el Activo 2`;
+                        document.getElementById('legendInfo').innerText = `Introduce Activo 2`;
                         stopTimer();
                         return;
                     }
@@ -384,28 +372,17 @@
             }
         }
 
-        // Cálculo de los 11 Indicadores
         function recalculateIndicators(data) {
             if (isComparing || !data || data.length === 0) {
-                smaSeries.setData([]);
-                emaSeries.setData([]);
-                vwapSeries.setData([]);
-                sarSeries.setData([]);
-                bollingerUpper.setData([]);
-                bollingerLower.setData([]);
-                rsiSeries.setData([]);
-                macdLineSeries.setData([]);
-                macdSignalSeries.setData([]);
-                macdHistSeries.setData([]);
-                obvSeries.setData([]);
-                stochKSeries.setData([]);
-                stochDSeries.setData([]);
-                atrSeries.setData([]);
+                smaSeries.setData([]); emaSeries.setData([]); vwapSeries.setData([]); sarSeries.setData([]);
+                bollingerUpper.setData([]); bollingerLower.setData([]); rsiSeries.setData([]);
+                macdLineSeries.setData([]); macdSignalSeries.setData([]); macdHistSeries.setData([]);
+                obvSeries.setData([]); stochKSeries.setData([]); stochDSeries.setData([]); atrSeries.setData([]);
                 clearFibonacci();
                 return;
             }
 
-            // 1. SMA 200
+            // SMA 200
             if (document.querySelector('[data-indicator="sma200"]').classList.contains('bg-blue-600')) {
                 let smaData = [];
                 for (let i = 199; i < data.length; i++) {
@@ -416,7 +393,7 @@
                 smaSeries.setData(smaData);
             } else { smaSeries.setData([]); }
 
-            // 2. EMA 50
+            // EMA 50
             if (document.querySelector('[data-indicator="ema50"]').classList.contains('bg-blue-600')) {
                 let emaData = [];
                 let k = 2 / (50 + 1);
@@ -429,7 +406,7 @@
                 emaSeries.setData(emaData);
             } else { emaSeries.setData([]); }
 
-            // 3. VWAP
+            // VWAP
             if (document.querySelector('[data-indicator="vwap"]').classList.contains('bg-blue-600')) {
                 let vwapData = [];
                 let cumulativeTPV = 0, cumulativeVol = 0;
@@ -442,7 +419,7 @@
                 vwapSeries.setData(vwapData);
             } else { vwapSeries.setData([]); }
 
-            // 4. Parabolic SAR
+            // Parabolic SAR
             if (document.querySelector('[data-indicator="sar"]').classList.contains('bg-blue-600')) {
                 let sarData = [];
                 if (data.length > 1) {
@@ -454,29 +431,11 @@
                     for (let i = 1; i < data.length; i++) {
                         sar = sar + af * (ep - sar);
                         if (isRising) {
-                            if (data[i].low < sar) {
-                                isRising = false;
-                                sar = ep;
-                                ep = data[i].low;
-                                af = 0.02;
-                            } else {
-                                if (data[i].high > ep) {
-                                    ep = data[i].high;
-                                    af = Math.min(af + 0.02, 0.2);
-                                }
-                            }
+                            if (data[i].low < sar) { isRising = false; sar = ep; ep = data[i].low; af = 0.02; }
+                            else if (data[i].high > ep) { ep = data[i].high; af = Math.min(af + 0.02, 0.2); }
                         } else {
-                            if (data[i].high > sar) {
-                                isRising = true;
-                                sar = ep;
-                                ep = data[i].high;
-                                af = 0.02;
-                            } else {
-                                if (data[i].low < ep) {
-                                    ep = data[i].low;
-                                    af = Math.min(af + 0.02, 0.2);
-                                }
-                            }
+                            if (data[i].high > sar) { isRising = true; sar = ep; ep = data[i].high; af = 0.02; }
+                            else if (data[i].low < ep) { ep = data[i].low; af = Math.min(af + 0.02, 0.2); }
                         }
                         sarData.push({ time: data[i].time, value: sar });
                     }
@@ -484,7 +443,7 @@
                 sarSeries.setData(sarData);
             } else { sarSeries.setData([]); }
 
-            // 5. Bollinger Bands
+            // Bollinger
             if (document.querySelector('[data-indicator="bollinger"]').classList.contains('bg-blue-600')) {
                 let upperData = [], lowerData = [];
                 for (let i = 19; i < data.length; i++) {
@@ -499,11 +458,10 @@
                 bollingerLower.setData(lowerData);
             } else { bollingerUpper.setData([]); bollingerLower.setData([]); }
 
-            // 6. RSI (14)
+            // RSI (14)
             if (document.querySelector('[data-indicator="rsi"]').classList.contains('bg-blue-600')) {
                 document.getElementById('rsi-chart-container').classList.remove('hidden');
-                let rsiData = [];
-                let gains = 0, losses = 0;
+                let rsiData = [], gains = 0, losses = 0;
                 for (let i = 1; i <= 14; i++) {
                     let diff = data[i].close - data[i - 1].close;
                     if (diff >= 0) gains += diff; else losses -= diff;
@@ -522,7 +480,7 @@
                 rsiSeries.setData([]);
             }
 
-            // 7. MACD (12, 26, 9)
+            // MACD
             if (document.querySelector('[data-indicator="macd"]').classList.contains('bg-blue-600')) {
                 document.getElementById('macd-chart-container').classList.remove('hidden');
                 let macdLines = [], signals = [], hists = [];
@@ -537,14 +495,10 @@
                     if (i >= 25) {
                         if (signals.length === 0) signal = macd;
                         else signal = (macd * k9) + (signal * (1 - k9));
-                        
                         let hist = macd - signal;
                         macdLines.push({ time: data[i].time, value: macd });
                         signals.push({ time: data[i].time, value: signal });
-                        hists.push({ 
-                            time: data[i].time, value: hist,
-                            color: hist >= 0 ? '#22c55e' : '#ef4444'
-                        });
+                        hists.push({ time: data[i].time, value: hist, color: hist >= 0 ? '#22c55e' : '#ef4444' });
                     }
                 }
                 macdLineSeries.setData(macdLines);
@@ -555,11 +509,10 @@
                 macdLineSeries.setData([]); macdSignalSeries.setData([]); macdHistSeries.setData([]);
             }
 
-            // 8. OBV (On-Balance Volume)
+            // OBV
             if (document.querySelector('[data-indicator="obv"]').classList.contains('bg-blue-600')) {
                 document.getElementById('obv-chart-container').classList.remove('hidden');
-                let obvData = [];
-                let currentOBV = 0;
+                let obvData = [], currentOBV = 0;
                 for (let i = 0; i < data.length; i++) {
                     if (i > 0) {
                         if (data[i].close > data[i - 1].close) currentOBV += data[i].volume;
@@ -573,7 +526,7 @@
                 obvSeries.setData([]);
             }
 
-            // 9. Oscilador Estocástico (14, 3)
+            // Estocástico
             if (document.querySelector('[data-indicator="stoch"]').classList.contains('bg-blue-600')) {
                 document.getElementById('stoch-chart-container').classList.remove('hidden');
                 let kData = [], dRaw = [];
@@ -585,7 +538,6 @@
                     kData.push({ time: data[i].time, value: k });
                     dRaw.push(k);
                 }
-                // Media móvil de 3 periodos para %D
                 let dData = [];
                 for (let i = 2; i < dRaw.length; i++) {
                     let avgD = (dRaw[i] + dRaw[i - 1] + dRaw[i - 2]) / 3;
@@ -598,11 +550,10 @@
                 stochKSeries.setData([]); stochDSeries.setData([]);
             }
 
-            // 10. ATR (Average True Range - 14)
+            // ATR
             if (document.querySelector('[data-indicator="atr"]').classList.contains('bg-blue-600')) {
                 document.getElementById('atr-chart-container').classList.remove('hidden');
-                let atrData = [];
-                let trs = [];
+                let atrData = [], trs = [];
                 for (let i = 0; i < data.length; i++) {
                     let tr = data[i].high - data[i].low;
                     if (i > 0) {
@@ -623,7 +574,7 @@
                 atrSeries.setData([]);
             }
 
-            // 11. Fibonacci Automático
+            // Fibonacci
             if (document.querySelector('[data-indicator="fibonacci"]').classList.contains('bg-blue-600')) {
                 drawFibonacci(data);
             } else {
@@ -665,17 +616,26 @@
         }
 
         function resizeCharts() {
-            mainChart.applyOptions({ width: mainContainer.clientWidth, height: mainContainer.clientHeight });
-            rsiChart.applyOptions({ width: rsiContainer.clientWidth, height: rsiContainer.clientHeight });
-            macdChart.applyOptions({ width: macdContainer.clientWidth, height: macdContainer.clientHeight });
-            obvChart.applyOptions({ width: obvContainer.clientWidth, height: obvContainer.clientHeight });
-            stochChart.applyOptions({ width: stochContainer.clientWidth, height: stochContainer.clientHeight });
-            atrChart.applyOptions({ width: atrContainer.clientWidth, height: atrContainer.clientHeight });
+            const w = mainContainer.clientWidth || window.innerWidth;
+            const h = mainContainer.clientHeight || 300;
+            mainChart.applyOptions({ width: w, height: h });
+            
+            const subContainers = ['rsi', 'macd', 'obv', 'stoch', 'atr'];
+            const subCharts = [rsiChart, macdChart, obvChart, stochChart, atrChart];
+            
+            subContainers.forEach((id, index) => {
+                const el = document.getElementById(`${id}-chart-container`);
+                if (el && !el.classList.contains('hidden')) {
+                    subCharts[index].applyOptions({ width: w, height: 96 });
+                }
+            });
         }
 
-        // Listeners
-        document.getElementById('inputAsset1').addEventListener('change', () => updateChart());
-        document.getElementById('inputAsset2').addEventListener('change', () => { if(isComparing) updateChart(); });
+        // Eventos
+        document.getElementById('searchForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            updateChart();
+        });
 
         document.getElementById('btnToggleCompare').addEventListener('click', (e) => {
             isComparing = !isComparing;
@@ -694,6 +654,7 @@
                 lineSeries1.setData([]);
                 compSeries.setData([]);
             }
+            resizeCharts();
             updateChart();
         });
 
@@ -726,6 +687,15 @@
         });
 
         window.addEventListener('resize', resizeCharts);
+
+        // Inicializar
+        window.addEventListener('load', () => {
+            document.getElementById('inputAsset1').value = 'TSLA';
+            setTimeout(() => {
+                resizeCharts();
+                updateChart();
+            }, 300);
+        });
     </script>
 </body>
 </html>
