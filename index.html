@@ -102,7 +102,7 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v2.6-FreeData</span>
+      <span class="version-tag" id="appVersionLabel">v2.7-FreeData</span>
     </div>
   </div>
 
@@ -164,12 +164,12 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.6-FreeData';
+const APP_VERSION = 'v2.7-FreeData';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
-const FETCH_TIMEOUT_MS = 8000;
+const FETCH_TIMEOUT_MS = 15000; // Ampliado a 15 segundos para conexiones móviles o proxies lentos
 const PINNED_KEY = 'av_pinned_asset';
 
 const $ = id => document.getElementById(id);
@@ -454,7 +454,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Proveedor Directo Stooq (Sin clave API, ilimitado)
+   DATOS: Proveedor Directo Stooq (Con manejo robusto de timeout)
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -470,6 +470,11 @@ async function fetchCSV(url) {
     const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
     if (!res.ok) return null;
     return await res.text();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Tiempo de espera agotado al conectar con el servidor.');
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -507,7 +512,6 @@ async function getMarketData(ticker, force) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
   }
 
-  // Tickers estándar de EE.UU. en Stooq (ej. tsla.us)
   const stooqSymbol = ticker.includes('.') ? ticker.toLowerCase() : (ticker.toLowerCase() + '.us');
   const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d`;
   const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
