@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#020617">
 <title>Graficador bursátil</title>
-<!-- Versión FIJADA (v4) de Lightweight Charts -->
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 :root{
@@ -29,6 +28,9 @@ button{font-family:inherit; user-select:none; -webkit-user-select:none}
 
 /* Cabecera */
 header{background:var(--panel); border-bottom:1px solid var(--line); padding:10px; flex:0 0 auto; z-index:40}
+.header-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px; color:var(--mut)}
+.version-tag{background:var(--line2); padding:2px 6px; border-radius:4px; font-family:monospace; color:#38bdf8; font-weight:700}
+
 form{margin:0; display:flex; flex-direction:column; gap:8px}
 .row{display:flex; align-items:center; gap:8px}
 .row + .row{padding-top:8px; border-top:1px solid var(--line)}
@@ -104,11 +106,15 @@ footer::-webkit-scrollbar{display:none}
 <body>
 
 <header>
+  <div class="header-top">
+    <span>📈 Graficador Bursátil Pro</span>
+    <span class="version-tag" id="appVersionLabel">v2.1-AlphaVantage</span>
+  </div>
   <form id="searchForm" autocomplete="off">
     <div class="row">
       <div class="field">
         <span class="tag a1">A1:</span>
-        <input id="inputAsset1" type="text" value="IBM" placeholder="AAPL, TSLA, SPY, MSFT…" enterkeyhint="search"
+        <input id="inputAsset1" type="text" value="IBM" placeholder="IBM, AAPL, TSLA…" enterkeyhint="search"
                autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 1">
         <button type="submit" class="go">Ir</button>
       </div>
@@ -160,20 +166,15 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-/* ================================================================
-   CONFIGURACIÓN (Alpha Vantage API)
-   ================================================================ */
+// Control de versión explícito
+const APP_VERSION = 'v2.1-AlphaVantage';
+console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
+
 const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 8000;
-
-// Clave gratuita de Alpha Vantage (puedes cambiar 'demo' por tu propia clave en alphavantage.co)
-// Con 'demo' solo funciona el ticker 'IBM'. Para otros activos, obtén una gratis.
 const AV_API_KEY = 'demo'; 
 
-/* ================================================================
-   UTILIDADES DE INTERFAZ
-   ================================================================ */
 const $ = id => document.getElementById(id);
 const legend = $('legendInfo');
 const legendBox = $('legendBox');
