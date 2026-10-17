@@ -31,8 +31,6 @@ header{background:var(--panel); border-bottom:1px solid var(--line); padding:10p
 .header-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px; color:var(--mut)}
 .header-badges{display:flex; gap:6px; align-items:center}
 .version-tag{background:var(--line2); padding:2px 6px; border-radius:4px; font-family:monospace; color:#38bdf8; font-weight:700}
-.settings-btn{background:var(--line2); border:0; border-radius:4px; color:var(--txt); padding:2px 6px; cursor:pointer; font-size:12px}
-.settings-btn.active{background:var(--green); color:#020617; font-weight:700}
 
 form{margin:0; display:flex; flex-direction:column; gap:8px}
 .row{display:flex; align-items:center; gap:8px}
@@ -62,15 +60,6 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 }
 .pill:hover{border-color:#475569}
 .pill.on{background:var(--blue); border-color:var(--blue); color:#fff}
-
-/* Panel de Ajustes API */
-.settings-panel{background:#0b1220; border:1px solid var(--line2); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; font-size:12px}
-.settings-panel input{background:var(--bg); border:1px solid var(--line2); color:var(--txt); padding:6px; border-radius:4px; font-family:monospace; font-size:12px}
-.settings-row{display:flex; gap:6px; align-items:center}
-.save-key-btn{background:var(--blue); color:#fff; border:0; border-radius:4px; padding:6px 12px; cursor:pointer; font-weight:700}
-.api-status{font-size:11px; font-weight:700}
-.api-status.ok{color:var(--green)}
-.api-status.warn{color:var(--amber)}
 
 /* Área de gráficos */
 #wrap{flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; background:var(--bg)}
@@ -113,29 +102,15 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <button type="button" id="btnToggleSettings" class="settings-btn" title="Configurar API Key">⚙️ API</button>
-      <span class="version-tag" id="appVersionLabel">v2.5-AlphaVantage</span>
+      <span class="version-tag" id="appVersionLabel">v2.6-FreeData</span>
     </div>
-  </div>
-
-  <!-- Panel de Ajustes API -->
-  <div class="settings-panel hidden" id="settingsPanel">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <label for="inputApiKey">Clave API de Alpha Vantage:</label>
-      <span id="apiStatusIndicator" class="api-status">Estado</span>
-    </div>
-    <div class="settings-row">
-      <input type="text" id="inputApiKey" placeholder="Pega aquí tu API key personal…" autocomplete="off">
-      <button type="button" id="btnSaveApiKey" class="save-key-btn">Guardar</button>
-    </div>
-    <span style="font-size:10px; color:var(--mut)">Consigue tu clave gratis en alphavantage.co. (Nota: Límite de 5 peticiones/minuto en cuentas gratuitas).</span>
   </div>
 
   <form id="searchForm" autocomplete="off">
     <div class="row">
       <div class="field">
         <span class="tag a1">A1:</span>
-        <input id="inputAsset1" type="text" value="" placeholder="Ej: AAPL, TSLA, MSFT…" enterkeyhint="search"
+        <input id="inputAsset1" type="text" value="" placeholder="Ej: TSLA, AAPL, MSFT…" enterkeyhint="search"
                autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 1">
         <button type="button" id="btnPin" class="pin-btn" title="Anclar activo por defecto">📌</button>
         <button type="submit" class="go">Ir</button>
@@ -189,18 +164,13 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.5-AlphaVantage';
+const APP_VERSION = 'v2.6-FreeData';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 8000;
 const PINNED_KEY = 'av_pinned_asset';
-const API_KEY_STORAGE = 'av_custom_api_key';
-
-function getApiKey() {
-  return localStorage.getItem(API_KEY_STORAGE) || 'demo';
-}
 
 const $ = id => document.getElementById(id);
 const legend = $('legendInfo');
@@ -484,7 +454,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Alpha Vantage API
+   DATOS: Proveedor Directo Stooq (Sin clave API, ilimitado)
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -493,67 +463,65 @@ function cacheSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
-async function fetchJSON(url) {
+async function fetchCSV(url) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
-    const text = await res.text();
-    try { return JSON.parse(text); } catch { return null; }
+    if (!res.ok) return null;
+    return await res.text();
   } finally {
     clearTimeout(timer);
   }
 }
 
-function definitiveError(msg) { const e = new Error(msg); e.definitive = true; return e; }
+function parseStooqCSV(csv, ticker) {
+  if (!csv || csv.trim().length === 0 || csv.includes('No data')) {
+    throw new Error('Sin datos para el ticker «' + ticker + '».');
+  }
+  const lines = csv.trim().split('\n');
+  if (lines.length <= 1) throw new Error('Respuesta no válida para ' + ticker);
 
-function parseAlphaVantage(json, ticker) {
-  if (!json) throw definitiveError('Respuesta vacía del proveedor');
-  if (json.Note || json.Information) {
-    throw definitiveError('Límite de peticiones alcanzado (espera un minuto o comprueba tu API Key).');
-  }
-  if (json['Error Message']) {
-    throw definitiveError('Ticker «' + ticker + '» no encontrado.');
-  }
-  const ts = json['Time Series (Daily)'];
-  if (!ts) {
-    throw definitiveError('Sin datos históricos para ' + ticker);
-  }
   const bars = [];
-  for (const [date, vals] of Object.entries(ts)) {
-    const o = parseFloat(vals['1. open']);
-    const h = parseFloat(vals['2. high']);
-    const l = parseFloat(vals['3. low']);
-    const c = parseFloat(vals['4. close']);
-    const v = parseFloat(vals['5. volume']) || 0;
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < 6) continue;
+    const date = cols[0].trim();
+    const o = parseFloat(cols[1]);
+    const h = parseFloat(cols[2]);
+    const l = parseFloat(cols[3]);
+    const c = parseFloat(cols[4]);
+    const v = parseFloat(cols[5]) || 0;
     if ([o, h, l, c].some(val => isNaN(val))) continue;
     bars.push({ time: date, open: o, high: h, low: l, close: c, volume: v });
   }
   bars.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
-  if (bars.length < 2) throw definitiveError('Datos insuficientes para ' + ticker);
+  if (bars.length < 2) throw new Error('Datos insuficientes para ' + ticker);
   return { bars, currency: 'USD', name: ticker, type: 'EQUITY' };
 }
 
 async function getMarketData(ticker, force) {
-  const key = 'av_mkt_' + ticker;
+  const key = 'stooq_mkt_' + ticker;
   const cached = cacheGet(key);
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
   }
-  const apiKey = getApiKey();
-  const target = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(ticker)}&outputsize=full&apikey=${apiKey}`;
-  
+
+  // Tickers estándar de EE.UU. en Stooq (ej. tsla.us)
+  const stooqSymbol = ticker.includes('.') ? ticker.toLowerCase() : (ticker.toLowerCase() + '.us');
+  const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d`;
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+
   try {
-    const json = await fetchJSON(target);
-    const parsed = parseAlphaVantage(json, ticker);
+    const csv = await fetchCSV(proxyUrl);
+    const parsed = parseStooqCSV(csv, ticker);
     cacheSet(key, { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, ts: Date.now() });
-    return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'Alpha Vantage' };
+    return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'Stooq Real-Time' };
   } catch (e) {
-    if (e.definitive) throw e;
     if (cached && cached.bars && cached.bars.length) {
       return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché antigua' };
     }
-    throw new Error('Error de conexión con Alpha Vantage para ' + ticker + '.');
+    throw new Error(e.message || ('No se pudieron obtener datos para ' + ticker));
   }
 }
 
@@ -828,7 +796,7 @@ async function resolveSymbol(raw, input) {
   if (input && input.dataset.picked && input.dataset.picked === raw) return raw;
   const up = raw.toUpperCase().trim();
   if (/^[A-Z0-9.]{1,10}$/.test(up)) return up;
-  throw new Error('Símbolo inválido. Usa tickers estándar (ej: AAPL, TSLA, SPY, MSFT).');
+  throw new Error('Símbolo inválido. Usa tickers estándar (ej: TSLA, AAPL, MSFT).');
 }
 
 /* ================================================================
@@ -840,7 +808,7 @@ async function updateChart(force = false) {
   const raw1 = in1.value.trim(), raw2 = in2.value.trim();
   const my = ++state.reqId;
 
-  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: AAPL, TSLA) o pulsa 📌 para cargar tu anclado'); stopTimer(); return; }
+  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: TSLA, AAPL) o pulsa 📌 para cargar tu anclado'); stopTimer(); return; }
 
   startTimer();
   try {
@@ -874,48 +842,6 @@ async function updateChart(force = false) {
 }
 
 $('searchForm').addEventListener('submit', e => { e.preventDefault(); updateChart(); });
-
-/* --- Panel de ajustes de API Key con indicador visual --- */
-const btnToggleSettings = $('btnToggleSettings');
-const settingsPanel = $('settingsPanel');
-const inputApiKey = $('inputApiKey');
-const btnSaveApiKey = $('btnSaveApiKey');
-const apiStatusIndicator = $('apiStatusIndicator');
-
-function updateApiStatusUI() {
-  const customKey = localStorage.getItem(API_KEY_STORAGE);
-  if (customKey && customKey.trim() !== '') {
-    inputApiKey.value = customKey;
-    btnToggleSettings.classList.add('active');
-    btnToggleSettings.textContent = '⚙️ API (Activa)';
-    apiStatusIndicator.textContent = '● Personalizada Activa';
-    apiStatusIndicator.className = 'api-status ok';
-  } else {
-    inputApiKey.value = '';
-    btnToggleSettings.classList.remove('active');
-    btnToggleSettings.textContent = '⚙️ API';
-    apiStatusIndicator.textContent = '● Usando Modo Demo (IBM)';
-    apiStatusIndicator.className = 'api-status warn';
-  }
-}
-
-btnToggleSettings.addEventListener('click', () => {
-  settingsPanel.classList.toggle('hidden');
-  updateApiStatusUI();
-});
-
-btnSaveApiKey.addEventListener('click', () => {
-  const keyVal = inputApiKey.value.trim();
-  if (keyVal) {
-    localStorage.setItem(API_KEY_STORAGE, keyVal);
-    flash('¡API Key guardada correctamente!');
-  } else {
-    localStorage.removeItem(API_KEY_STORAGE);
-    flash('API Key eliminada (usando modo demo).');
-  }
-  updateApiStatusUI();
-  settingsPanel.classList.add('hidden');
-});
 
 /* --- Gestión de anclaje (Pin) --- */
 const btnPin = $('btnPin');
@@ -989,7 +915,6 @@ document.querySelectorAll('.ind-btn').forEach(btn => {
    ARRANQUE
    ================================================================ */
 fitters.forEach(fit);
-updateApiStatusUI();
 
 const pinnedAsset = localStorage.getItem(PINNED_KEY);
 if (pinnedAsset) {
@@ -997,7 +922,7 @@ if (pinnedAsset) {
   btnPin.classList.add('pinned');
   updateChart();
 } else {
-  setLegend('Escribe un ticker (ej: AAPL) o ancla tu favorito con 📌');
+  setLegend('Escribe un ticker (ej: TSLA, AAPL) o ancla tu favorito con 📌');
 }
 checkPinState();
 </script>
