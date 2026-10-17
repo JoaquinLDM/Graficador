@@ -102,7 +102,7 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v3.0-Fast</span>
+      <span class="version-tag" id="appVersionLabel">v3.1-DirectEngine</span>
     </div>
   </div>
 
@@ -164,12 +164,12 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.0-Fast';
+const APP_VERSION = 'v3.1-DirectEngine';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
-const VISIBLE_BARS = 120;
+const VISIBLE_BARS = 180;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
-const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_MS = 8000;
 const PINNED_KEY = 'av_pinned_asset';
 
 const $ = id => document.getElementById(id);
@@ -454,7 +454,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Yahoo Finance optimizado a 6 meses (rango ligero)
+   DATOS: Motor Multiorigen Resistente a Bloqueos de Brave
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -463,74 +463,76 @@ function cacheSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
-async function fetchJSON(url) {
+function parseCSVData(csv, ticker) {
+  if (!csv || csv.trim().length === 0 || csv.includes('No data')) {
+    throw new Error('Sin datos para el ticker «' + ticker + '».');
+  }
+  const lines = csv.trim().split('\n');
+  if (lines.length <= 1) throw new Error('Respuesta no válida para ' + ticker);
+
+  const bars = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < 5) continue;
+    const date = cols[0].trim();
+    const o = parseFloat(cols[1]);
+    const h = parseFloat(cols[2]);
+    const l = parseFloat(cols[3]);
+    const c = parseFloat(cols[4]);
+    const v = parseFloat(cols[5]) || 0;
+    if ([o, h, l, c].some(val => isNaN(val))) continue;
+    bars.push({ time: date, open: o, high: h, low: l, close: c, volume: v });
+  }
+  bars.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
+  if (bars.length < 2) throw new Error('Datos insuficientes para ' + ticker);
+  return { bars, currency: 'USD', name: ticker, type: 'EQUITY' };
+}
+
+async function fetchWithTimeout(url, options = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
-    if (!res.ok) throw new Error('Error HTTP ' + res.status);
-    return await res.json();
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error('Tiempo de espera agotado al conectar con el servidor.');
-    }
-    throw err;
+    const res = await fetch(url, Object.assign({ signal: ctrl.signal }, options));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.text();
   } finally {
     clearTimeout(timer);
   }
 }
 
-function parseYahooJSON(json, ticker) {
-  try {
-    const result = json.chart.result[0];
-    const timestamps = result.timestamp;
-    const quotes = result.indicators.quote[0];
-    const currency = result.meta.currency || 'USD';
-    
-    const bars = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      const timeSec = timestamps[i];
-      const o = quotes.open[i];
-      const h = quotes.high[i];
-      const l = quotes.low[i];
-      const c = quotes.close[i];
-      const v = quotes.volume[i];
-      if (o == null || h == null || l == null || c == null) continue;
-      
-      const dateStr = new Date(timeSec * 1000).toISOString().split('T')[0];
-      bars.push({ time: dateStr, open: o, high: h, low: l, close: c, volume: v || 0 });
-    }
-    bars.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
-    if (bars.length < 2) throw new Error('Datos insuficientes para ' + ticker);
-    return { bars, currency, name: ticker, type: 'EQUITY' };
-  } catch (e) {
-    throw new Error('Ticker «' + ticker + '» no encontrado o sin datos.');
-  }
-}
-
 async function getMarketData(ticker, force) {
-  const key = 'yh_fast_' + ticker;
+  const key = 'direct_mkt_' + ticker;
   const cached = cacheGet(key);
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché' };
   }
 
-  const sym = ticker.toUpperCase().trim();
-  // Reducido a range=6m para respuesta inmediata y ligera
-  const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=6m`;
-  const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=` + encodeURIComponent(targetUrl);
+  const sym = ticker.includes('.') ? ticker.toLowerCase() : (ticker.toLowerCase() + '.us');
+  
+  // Lista de endpoints alternativos (Failover en cascada)
+  const sources = [
+    { url: `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`, type: 'csv' },
+    { url: `https://thingproxy.freeboard.io/fetch/https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`, type: 'csv' },
+    { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`)}`, type: 'csv' }
+  ];
 
-  try {
-    const json = await fetchJSON(proxyUrl);
-    const parsed = parseYahooJSON(json, sym);
-    cacheSet(key, { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, ts: Date.now() });
-    return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'Yahoo Finance' };
-  } catch (e) {
-    if (cached && cached.bars && cached.bars.length) {
-      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché antigua' };
+  let lastErr = null;
+  for (const src of sources) {
+    try {
+      const txt = await fetchWithTimeout(src.url);
+      const parsed = parseCSVData(txt, ticker);
+      cacheSet(key, { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, ts: Date.now() });
+      return { bars: parsed.bars, currency: parsed.currency, name: parsed.name, type: parsed.type, source: 'Mercado en directo' };
+    } catch (e) {
+      lastErr = e;
     }
-    throw new Error(e.message || ('No se pudieron obtener datos para ' + ticker));
   }
+
+  if (cached && cached.bars && cached.bars.length) {
+    return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: cached.type || '', source: 'caché previa' };
+  }
+  
+  throw new Error('Si el problema persiste en Brave, desactiva temporalmente el Escudo (Shield) para esta página.');
 }
 
 /* ================================================================
@@ -769,7 +771,7 @@ function renderSingle(d, t) {
   mainSeries.setData(d.bars);
   recalc();
   showRecent(d.bars.length);
-  setLegend(`${t}: ${fmt(last.close)} ${d.currency} · ${last.time} · Fuente: ${d.source}`);
+  setLegend(`${t}: ${fmt(last.close)} USD · ${last.time} · Fuente: ${d.source}`);
 }
 
 function renderCompare(d1, t1, d2, t2) {
@@ -804,7 +806,7 @@ async function resolveSymbol(raw, input) {
   if (input && input.dataset.picked && input.dataset.picked === raw) return raw;
   const up = raw.toUpperCase().trim();
   if (/^[A-Z0-9.\-]{1,15}$/.test(up)) return up;
-  throw new Error('Símbolo inválido. Usa tickers estándar (ej: TSLA, AAPL, BTC-USD).');
+  throw new Error('Símbolo inválido. Usa tickers estándar (ej: TSLA, AAPL, MSFT).');
 }
 
 /* ================================================================
