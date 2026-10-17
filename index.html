@@ -32,8 +32,8 @@
             <div class="flex items-center justify-between space-x-2">
                 <div class="flex items-center space-x-1.5 flex-1 bg-slate-800 rounded border border-slate-700 px-2 py-0.5">
                     <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">A1:</span>
-                    <input id="inputAsset1" type="text" enterkeyhint="search" placeholder="TSLA, AAPL, BTC-USD..." class="bg-transparent text-xs text-blue-400 font-bold py-1.5 w-full uppercase focus:outline-none">
-                    <button type="submit" id="btnSearchSubmit" class="bg-blue-600 text-white text-[11px] font-bold px-2 py-1 rounded shrink-0 active:bg-blue-700">
+                    <input id="inputAsset1" type="text" enterkeyhint="search" value="TSLA" placeholder="TSLA, AAPL..." class="bg-transparent text-xs text-blue-400 font-bold py-1.5 w-full uppercase focus:outline-none">
+                    <button type="submit" id="btnSearchSubmit" class="bg-blue-600 text-white text-[11px] font-bold px-3 py-1 rounded shrink-0 active:bg-blue-700">
                         Ir
                     </button>
                 </div>
@@ -57,21 +57,21 @@
         </form>
     </header>
 
-    <!-- 2. ÁREA DE GRÁFICOS (GARANTIZANDO ALTURA REAL) -->
-    <main id="chart-main-wrapper" class="flex-1 w-full relative bg-slate-950 flex flex-col min-h-[300px] overflow-hidden">
-        <!-- Gráfico Principal (Velas, Precios, Overlays) -->
-        <div id="main-chart-container" class="w-full flex-1 relative min-h-[250px]"></div>
+    <!-- 2. ÁREA DE GRÁFICOS -->
+    <main id="chart-main-wrapper" class="flex-1 w-full relative bg-slate-950 flex flex-col min-h-[250px] overflow-hidden">
+        <!-- Gráfico Principal -->
+        <div id="main-chart-container" class="w-full flex-1 relative min-h-[200px]"></div>
         
         <!-- Subpaneles de Indicadores -->
-        <div id="rsi-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="macd-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="obv-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="stoch-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
-        <div id="atr-chart-container" class="w-full h-24 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="rsi-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="macd-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="obv-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="stoch-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
+        <div id="atr-chart-container" class="w-full h-20 border-t border-slate-800 relative hidden shrink-0"></div>
 
         <!-- Leyenda Flotante -->
         <div class="absolute top-2 left-2 pointer-events-none bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded text-[10px] text-slate-300 border border-slate-800/80 z-10">
-            <span id="legendInfo">Iniciando aplicación...</span>
+            <span id="legendInfo">Cargando Tesla (TSLA)...</span>
         </div>
 
         <!-- Indicador de Carga -->
@@ -109,20 +109,13 @@
         let startTime = 0;
         let cachedRawData = [];
 
-        // 1. Inicialización de Gráficos con Dimensionado Dinámico
+        // Dimensiones seguras iniciales para móvil
+        const screenWidth = window.innerWidth > 0 ? window.innerWidth : 360;
         const mainContainer = document.getElementById('main-chart-container');
-        
-        function getContainerDimensions(container) {
-            const width = container.clientWidth || window.innerWidth || 300;
-            const height = container.clientHeight || 300;
-            return { width, height };
-        }
-
-        const initialDim = getContainerDimensions(mainContainer);
 
         const mainChart = LightweightCharts.createChart(mainContainer, {
-            width: initialDim.width,
-            height: initialDim.height,
+            width: screenWidth,
+            height: 300,
             layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
             grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
             timeScale: { borderColor: '#1e293b', timeVisible: true }
@@ -144,9 +137,8 @@
         // Subpaneles
         function createSubChart(containerId) {
             const container = document.getElementById(containerId);
-            const dim = getContainerDimensions(container);
             return LightweightCharts.createChart(container, {
-                width: dim.width, height: 96,
+                width: screenWidth, height: 80,
                 layout: { background: { type: 'solid', color: '#020617' }, textColor: '#94a3b8' },
                 grid: { vertLines: { color: '#0f172a' }, horzLines: { color: '#0f172a' } },
                 timeScale: { borderColor: '#1e293b', visible: false }
@@ -201,7 +193,7 @@
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
 
-        // Descarga robusta con doble proxy y fallback
+        // Sistema de descarga ultraseguro con fallback instantáneo
         async function fetchYahooData(ticker, forceRefresh = false) {
             if (!ticker) return [];
             
@@ -218,12 +210,11 @@
 
             const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}?range=1y&interval=1d`;
             
-            // Intento 1: Proxy Allorigins
             try {
-                const proxy1 = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+                const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const response = await fetch(proxy1, { signal: controller.signal });
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                const response = await fetch(proxy, { signal: controller.signal });
                 clearTimeout(timeoutId);
                 const json = await response.json();
                 const contents = JSON.parse(json.contents);
@@ -233,24 +224,7 @@
                     return parsed;
                 }
             } catch (e) {
-                console.warn("Proxy 1 falló, intentando Proxy 2...");
-            }
-
-            // Intento 2: Proxy Corsproxy
-            try {
-                const proxy2 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const response = await fetch(proxy2, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                const contents = await response.json();
-                const parsed = parseYahooResponse(contents);
-                if (parsed.length > 0) {
-                    localStorage.setItem(cacheKey, JSON.stringify({ data: parsed, timestamp: Date.now() }));
-                    return parsed;
-                }
-            } catch (e) {
-                console.warn("Proxy 2 falló. Generando datos simulados...");
+                console.warn("Proxy ocupado, usando datos locales simulados...");
             }
 
             return generateFallbackData(cleanTicker);
@@ -616,7 +590,7 @@
         }
 
         function resizeCharts() {
-            const w = mainContainer.clientWidth || window.innerWidth;
+            const w = mainContainer.clientWidth || window.innerWidth || 360;
             const h = mainContainer.clientHeight || 300;
             mainChart.applyOptions({ width: w, height: h });
             
@@ -626,7 +600,7 @@
             subContainers.forEach((id, index) => {
                 const el = document.getElementById(`${id}-chart-container`);
                 if (el && !el.classList.contains('hidden')) {
-                    subCharts[index].applyOptions({ width: w, height: 96 });
+                    subCharts[index].applyOptions({ width: w, height: 80 });
                 }
             });
         }
@@ -688,14 +662,11 @@
 
         window.addEventListener('resize', resizeCharts);
 
-        // Inicializar
-        window.addEventListener('load', () => {
-            document.getElementById('inputAsset1').value = 'TSLA';
-            setTimeout(() => {
-                resizeCharts();
-                updateChart();
-            }, 300);
-        });
+        // Arranque inmediato garantizado
+        setTimeout(() => {
+            resizeCharts();
+            updateChart();
+        }, 150);
     </script>
 </body>
 </html>
