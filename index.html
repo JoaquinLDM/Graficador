@@ -49,6 +49,9 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 .go{background:var(--blue); color:#fff; border:0; border-radius:5px; font-size:12px; font-weight:700; padding:7px 14px; cursor:pointer}
 .go:active{background:#1d4ed8}
 
+.pin-btn{background:var(--line2); color:var(--mut); border:0; border-radius:5px; font-size:14px; padding:7px 10px; cursor:pointer; transition:background .15s, color .15s}
+.pin-btn.pinned{background:var(--amber); color:#020617}
+
 .pill{
   background:var(--line); color:#cbd5e1; border:1px solid var(--line2); border-radius:999px;
   padding:8px 14px; font-size:12px; font-weight:500; white-space:nowrap; cursor:pointer; flex:0 0 auto;
@@ -56,17 +59,6 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 }
 .pill:hover{border-color:#475569}
 .pill.on{background:var(--blue); border-color:var(--blue); color:#fff}
-
-/* Sugerencias de búsqueda */
-.suggest{
-  position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30; margin:0; padding:4px 0; list-style:none;
-  max-height:40vh; overflow-y:auto; background:#0b1220; border:1px solid var(--line2); border-radius:8px;
-  box-shadow:0 8px 24px rgba(0,0,0,.5);
-}
-.suggest li{padding:8px 12px; display:flex; gap:10px; align-items:baseline; cursor:pointer; font-size:13px}
-.suggest li:hover,.suggest li:active{background:var(--line)}
-.suggest b{color:#e2e8f0; flex:0 0 auto}
-.suggest span{color:var(--mut); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
 /* Área de gráficos */
 #wrap{flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; background:var(--bg)}
@@ -108,14 +100,15 @@ footer::-webkit-scrollbar{display:none}
 <header>
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
-    <span class="version-tag" id="appVersionLabel">v2.1-AlphaVantage</span>
+    <span class="version-tag" id="appVersionLabel">v2.2-AlphaVantage</span>
   </div>
   <form id="searchForm" autocomplete="off">
     <div class="row">
       <div class="field">
         <span class="tag a1">A1:</span>
-        <input id="inputAsset1" type="text" value="IBM" placeholder="IBM, AAPL, TSLA…" enterkeyhint="search"
+        <input id="inputAsset1" type="text" value="" placeholder="Ej: IBM, AAPL, TSLA…" enterkeyhint="search"
                autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Activo 1">
+        <button type="button" id="btnPin" class="pin-btn" title="Anclar activo por defecto">📌</button>
         <button type="submit" class="go">Ir</button>
       </div>
       <button type="button" id="btnToggleCompare" class="pill">Comparar: OFF</button>
@@ -166,14 +159,14 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-// Control de versión explícito
-const APP_VERSION = 'v2.1-AlphaVantage';
+const APP_VERSION = 'v2.2-AlphaVantage';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 8000;
 const AV_API_KEY = 'demo'; 
+const PINNED_KEY = 'av_pinned_asset';
 
 const $ = id => document.getElementById(id);
 const legend = $('legendInfo');
@@ -713,7 +706,7 @@ async function updateChart(force = false) {
   const raw1 = in1.value.trim(), raw2 = in2.value.trim();
   const my = ++state.reqId;
 
-  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: IBM, AAPL, TSLA)'); stopTimer(); return; }
+  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: AAPL, TSLA) o pulsa 📌 para cargar tu anclado'); stopTimer(); return; }
 
   startTimer();
   try {
@@ -747,6 +740,40 @@ async function updateChart(force = false) {
 }
 
 $('searchForm').addEventListener('submit', e => { e.preventDefault(); updateChart(); });
+
+/* --- Gestión de anclaje (Pin) --- */
+const btnPin = $('btnPin');
+function checkPinState() {
+  const currentVal = $('inputAsset1').value.trim().toUpperCase();
+  const pinned = localStorage.getItem(PINNED_KEY);
+  if (pinned && currentVal === pinned) {
+    btnPin.classList.add('pinned');
+    btnPin.title = 'Activo anclado por defecto';
+  } else {
+    btnPin.classList.remove('pinned');
+    btnPin.title = 'Anclar activo actual por defecto';
+  }
+}
+
+btnPin.addEventListener('click', () => {
+  const val = $('inputAsset1').value.trim().toUpperCase();
+  if (!val) {
+    flash('Escribe un ticker válido antes de anclar.');
+    return;
+  }
+  const currentPinned = localStorage.getItem(PINNED_KEY);
+  if (currentPinned === val) {
+    localStorage.removeItem(PINNED_KEY);
+    btnPin.classList.remove('pinned');
+    flash('Activo desanclado.');
+  } else {
+    localStorage.setItem(PINNED_KEY, val);
+    btnPin.classList.add('pinned');
+    flash(`¡Activo ${val} anclado por defecto!`);
+  }
+});
+
+$('inputAsset1').addEventListener('input', checkPinState);
 
 $('btnToggleCompare').addEventListener('click', e => {
   state.comparing = !state.comparing;
@@ -786,7 +813,17 @@ document.querySelectorAll('.ind-btn').forEach(btn => {
    ARRANQUE
    ================================================================ */
 fitters.forEach(fit);
-updateChart();
+
+// Comprobar si hay un activo anclado previamente
+const pinnedAsset = localStorage.getItem(PINNED_KEY);
+if (pinnedAsset) {
+  $('inputAsset1').value = pinnedAsset;
+  btnPin.classList.add('pinned');
+  updateChart();
+} else {
+  setLegend('Escribe un ticker (ej: AAPL) o ancla tu favorito con 📌');
+}
+checkPinState();
 </script>
 </body>
 </html>
