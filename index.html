@@ -32,6 +32,12 @@ header{background:var(--panel); border-bottom:1px solid var(--line); padding:10p
 .header-badges{display:flex; gap:6px; align-items:center}
 .version-tag{background:var(--line2); padding:2px 6px; border-radius:4px; font-family:monospace; color:#38bdf8; font-weight:700}
 
+.btn-icon{
+  background:var(--line); color:var(--txt); border:1px solid var(--line2);
+  border-radius:6px; padding:3px 8px; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+.btn-icon:hover{background:var(--line2)}
+
 form{margin:0; display:flex; flex-direction:column; gap:8px}
 .row{display:flex; align-items:center; gap:8px}
 .row + .row{padding-top:8px; border-top:1px solid var(--line)}
@@ -85,6 +91,27 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
 #timerCount{color:#60a5fa; font-weight:700}
 
+/* Modal de configuración */
+.modal-backdrop{
+  position:fixed; inset:0; z-index:100; background:rgba(2,6,23,.85); backdrop-filter:blur(4px);
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+.modal{
+  background:var(--panel); border:1px solid var(--line2); border-radius:12px;
+  width:100%; max-width:420px; padding:20px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);
+  display:flex; flex-direction:column; gap:14px;
+}
+.modal h3{margin:0; font-size:16px; color:var(--txt); display:flex; align-items:center; gap:8px}
+.modal p{margin:0; font-size:12px; color:var(--mut); line-height:1.4}
+.modal input{
+  width:100%; background:var(--line); border:1px solid var(--line2); border-radius:6px;
+  padding:10px; color:var(--txt); font-size:13px; font-family:monospace; outline:none;
+}
+.modal input:focus{border-color:var(--blue)}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:6px}
+.btn-sec{background:var(--line2); color:var(--txt); border:0; border-radius:6px; padding:8px 14px; font-size:12px; cursor:pointer}
+.btn-pri{background:var(--blue); color:#fff; border:0; border-radius:6px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer}
+
 /* Pie: indicadores */
 footer{
   flex:0 0 auto; display:flex; align-items:center; gap:8px; overflow-x:auto;
@@ -102,7 +129,8 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v3.2-LocalEngine</span>
+      <span class="version-tag" id="appVersionLabel">v3.3-CustomIP</span>
+      <button type="button" id="btnConfig" class="btn-icon" title="Configurar Servidor API">⚙️ Servidor</button>
     </div>
   </div>
 
@@ -145,6 +173,19 @@ footer::-webkit-scrollbar{display:none}
   <div class="panel hidden" id="atrPanel"><span class="plabel">ATR (14)</span><div class="cbox"></div></div>
 </main>
 
+<!-- Modal Configuración Servidor -->
+<div class="modal-backdrop hidden" id="configModal">
+  <div class="modal">
+    <h3>⚙️ Configuración del Servidor</h3>
+    <p>Introduce la IP o dirección URL de tu servidor FastAPI (ej. <code>192.168.1.50:8080</code> o <code>http://localhost:8080</code>):</p>
+    <input type="text" id="serverUrlInput" placeholder="http://192.168.1.50:8080" autocomplete="off" spellcheck="false">
+    <div class="modal-actions">
+      <button type="button" class="btn-sec" id="btnCancelConfig">Cancelar</button>
+      <button type="button" class="btn-pri" id="btnSaveConfig">Guardar y Reintentar</button>
+    </div>
+  </div>
+</div>
+
 <footer>
   <button class="pill ind-btn" data-indicator="bollinger">Bollinger</button>
   <button class="pill ind-btn" data-indicator="frama">FRAMA HeikenAshi + BB</button>
@@ -164,14 +205,14 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.2-LocalEngine';
+const APP_VERSION = 'v3.3-CustomIP';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
 const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 10000;
 const PINNED_KEY = 'av_pinned_asset';
-const LOCAL_API_URL = 'http://localhost:8080';
+const SERVER_URL_KEY = 'av_custom_server_url';
 
 const $ = id => document.getElementById(id);
 const legend = $('legendInfo');
@@ -214,6 +255,49 @@ function stopTimer() {
   timerInterval = null;
   $('loadingOverlay').classList.add('hidden');
 }
+
+/* ================================================================
+   CONFIGURACIÓN DE SERVIDOR API
+   ================================================================ */
+function getSavedServerUrl() {
+  let url = localStorage.getItem(SERVER_URL_KEY);
+  if (!url) return '';
+  url = url.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'http://' + url;
+  }
+  return url;
+}
+
+function openConfigModal() {
+  const current = localStorage.getItem(SERVER_URL_KEY) || 'http://192.168.1.50:8080';
+  $('serverUrlInput').value = current;
+  $('configModal').classList.remove('hidden');
+  $('serverUrlInput').focus();
+}
+
+function closeConfigModal() {
+  $('configModal').classList.add('hidden');
+}
+
+$('btnConfig').addEventListener('click', openConfigModal);
+$('btnCancelConfig').addEventListener('click', closeConfigModal);
+
+$('btnSaveConfig').addEventListener('click', () => {
+  let val = $('serverUrlInput').value.trim();
+  if (!val) {
+    alert('Por favor, introduce una dirección IP o URL válida.');
+    return;
+  }
+  if (!/^https?:\/\//i.test(val)) {
+    val = 'http://' + val;
+  }
+  val = val.replace(/\/+$/, '');
+  localStorage.setItem(SERVER_URL_KEY, val);
+  closeConfigModal();
+  flash('Servidor actualizado: ' + val);
+  updateChart(true);
+});
 
 /* ================================================================
    INDICADORES TÉCNICOS
@@ -455,7 +539,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Conexión con Servidor Local FastAPI
+   DATOS: Conexión con Servidor Configurable
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -465,14 +549,20 @@ function cacheSet(key, val) {
 }
 
 async function getMarketData(ticker, force) {
-  const key = 'local_mkt_' + ticker;
+  const baseUrl = getSavedServerUrl();
+  if (!baseUrl) {
+    openConfigModal();
+    throw new Error('Configura la dirección de tu servidor API con el botón ⚙️ Servidor');
+  }
+
+  const key = 'custom_mkt_' + ticker;
   const cached = cacheGet(key);
   if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
     return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: 'EQUITY', source: 'caché local' };
   }
 
   const sym = ticker.toUpperCase().trim();
-  const url = `${LOCAL_API_URL}/ticker/${encodeURIComponent(sym)}`;
+  const url = `${baseUrl}/ticker/${encodeURIComponent(sym)}`;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
@@ -488,15 +578,15 @@ async function getMarketData(ticker, force) {
       throw new Error('Sin datos suficientes para ' + sym);
     }
     cacheSet(key, { bars: data.bars, currency: data.currency, name: sym, ts: Date.now() });
-    return { bars: data.bars, currency: data.currency, name: sym, source: 'Servidor Local Python' };
+    return { bars: data.bars, currency: data.currency, name: sym, source: 'Servidor API (' + baseUrl + ')' };
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('Servidor local no responde. Comprueba que uvicorn esté corriendo.');
+      throw new Error('Tiempo agotado al conectar con ' + baseUrl + '. Comprueba la IP y que Uvicorn esté en ejecución.');
     }
     if (cached && cached.bars && cached.bars.length) {
       return { bars: cached.bars, currency: cached.currency, name: cached.name || '', source: 'caché previa' };
     }
-    throw new Error(err.message || ('No se pudo conectar con ' + LOCAL_API_URL));
+    throw new Error(err.message || ('No se pudo conectar con el servidor: ' + baseUrl));
   } finally {
     clearTimeout(timer);
   }
