@@ -26,6 +26,15 @@ body{
 button{font-family:inherit; user-select:none; -webkit-user-select:none}
 .hidden{display:none !important}
 
+/* Ocultar completamente cualquier logo/marca de agua remanente */
+div[class*="tv-lightweight-charts"] a, 
+a[href*="tradingview"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Cabecera */
 header{background:var(--panel); border-bottom:1px solid var(--line); padding:10px; flex:0 0 auto; z-index:40}
 .header-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px; color:var(--mut)}
@@ -134,7 +143,7 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v3.6-FreeData</span>
+      <span class="version-tag" id="appVersionLabel">v3.7-FreeDataProxy</span>
       <button type="button" id="btnConfig" class="btn-icon" title="Configurar Fuente de Datos">⚙️ Servidor</button>
     </div>
   </div>
@@ -183,8 +192,8 @@ footer::-webkit-scrollbar{display:none}
     <h3>⚙️ Configuración de Datos</h3>
     <label>Fuente de datos:
       <select id="dataSourceSelect">
-        <option value="server">Servidor API Privado (FastAPI / ZeroTier)</option>
         <option value="stooq">Datos Gratuitos Públicos (Stooq - Sin servidor)</option>
+        <option value="server">Servidor API Privado (FastAPI / ZeroTier)</option>
       </select>
     </label>
     <div id="serverUrlContainer">
@@ -240,7 +249,7 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.6-FreeData';
+const APP_VERSION = 'v3.7-FreeDataProxy';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
@@ -305,7 +314,7 @@ function getSavedServerUrl() {
 }
 
 function openConfigModal() {
-  const currentSource = localStorage.getItem(DATA_SOURCE_KEY) || 'server';
+  const currentSource = localStorage.getItem(DATA_SOURCE_KEY) || 'stooq';
   $('dataSourceSelect').value = currentSource;
 
   const currentUrl = localStorage.getItem(SERVER_URL_KEY) || 'http://192.168.191.1:8080';
@@ -593,7 +602,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Conexión Servidor API o Stooq (Datos Gratuitos)
+   DATOS: Conexión Servidor API o Stooq (Proxy CORS Integrado)
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -605,20 +614,26 @@ function cacheSet(key, val) {
 async function getStooqData(ticker) {
   let sym = ticker.toLowerCase().trim();
   if (!sym.includes('.')) {
-    sym += '.us'; // por defecto acciones EE.UU. si no se especifica extensión (ej: aapl.us)
+    sym += '.us'; // por defecto EE.UU.
   }
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`;
+  const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`;
+  
+  const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(targetUrl);
+  const fallbackProxy = `https://api.allorigins.win/raw?url=` + encodeURIComponent(targetUrl);
   
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) throw new Error('Error al conectar con el servicio gratuito de Stooq');
+    let res = await fetch(proxyUrl, { signal: ctrl.signal }).catch(() => null);
+    if (!res || !res.ok) {
+      res = await fetch(fallbackProxy, { signal: ctrl.signal });
+    }
+    if (!res.ok) throw new Error('Error al conectar con el servicio gratuito');
     const text = await res.text();
     
     if (text.includes('Przekroczono limit') || text.trim() === 'Date,Open,High,Low,Close,Volume' || text.length < 50) {
-      throw new Error('Símbolo no encontrado o límite excedido en Stooq. Prueba con sufijo (ej: aapl.us).');
+      throw new Error('Símbolo no encontrado o límite alcanzado. Prueba con sufijo (ej: aapl.us).');
     }
 
     const lines = text.trim().split('\n');
@@ -630,7 +645,7 @@ async function getStooqData(ticker) {
       const cl = parseFloat(close);
       if (date && !isNaN(cl)) {
         bars.push({
-          time: date, // Lightweight Charts acepta cadenas 'YYYY-MM-DD'
+          time: date,
           open: parseFloat(open),
           high: parseFloat(high),
           low: parseFloat(low),
@@ -648,7 +663,7 @@ async function getStooqData(ticker) {
 }
 
 async function getMarketData(ticker, force) {
-  const dataSource = localStorage.getItem(DATA_SOURCE_KEY) || 'server';
+  const dataSource = localStorage.getItem(DATA_SOURCE_KEY) || 'stooq';
 
   if (dataSource === 'stooq') {
     const key = 'stooq_mkt_' + ticker;
@@ -966,7 +981,6 @@ function cavaCompute(bars) {
     .filter(l => Number.isFinite(l[1]));
   const equity = Number(localStorage.getItem(CAVA_EQ_KEY)) || 0;
   
-  // Soporte para fechas en formato string (Stooq YYYY-MM-DD) o timestamps numéricos
   const isStringTime = typeof bars[0].time === 'string';
   const dayFirst = {};
   if (!isStringTime) {
