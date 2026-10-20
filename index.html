@@ -80,7 +80,6 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
   padding:6px 10px; font-size:11px; line-height:1.35; color:#cbd5e1; pointer-events:none;
 }
 .legend.err{color:#fca5a5; border-color:#7f1d1d}
-.attr{position:absolute; bottom:30px; left:8px; z-index:4; font-size:9px; color:#475569; text-decoration:none}
 
 .overlay{
   position:absolute; inset:0; z-index:20; background:rgba(2,6,23,.8);
@@ -103,11 +102,11 @@ form{margin:0; display:flex; flex-direction:column; gap:8px}
 }
 .modal h3{margin:0; font-size:16px; color:var(--txt); display:flex; align-items:center; gap:8px}
 .modal p{margin:0; font-size:12px; color:var(--mut); line-height:1.4}
-.modal input{
+.modal select, .modal input{
   width:100%; background:var(--line); border:1px solid var(--line2); border-radius:6px;
   padding:10px; color:var(--txt); font-size:13px; font-family:monospace; outline:none;
 }
-.modal input:focus{border-color:var(--blue)}
+.modal select:focus, .modal input:focus{border-color:var(--blue)}
 .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:6px}
 .btn-sec{background:var(--line2); color:var(--txt); border:0; border-radius:6px; padding:8px 14px; font-size:12px; cursor:pointer}
 .btn-pri{background:var(--blue); color:#fff; border:0; border-radius:6px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer}
@@ -121,6 +120,12 @@ footer{
 }
 footer::-webkit-scrollbar{display:none}
 #btnRefresh{background:var(--blue); border-color:var(--blue); color:#fff; font-weight:700}
+
+/* Estrategia Cava: modal de niveles de opciones */
+.cava-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.modal label{display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--mut)}
+#btnCavaOpt{border-color:#a16207; color:#fbbf24}
+.pill.cava-on{background:#a16207; border-color:#a16207; color:#fff}
 </style>
 </head>
 <body>
@@ -129,8 +134,8 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v3.3-CustomIP</span>
-      <button type="button" id="btnConfig" class="btn-icon" title="Configurar Servidor API">⚙️ Servidor</button>
+      <span class="version-tag" id="appVersionLabel">v3.6-FreeData</span>
+      <button type="button" id="btnConfig" class="btn-icon" title="Configurar Fuente de Datos">⚙️ Servidor</button>
     </div>
   </div>
 
@@ -160,7 +165,6 @@ footer::-webkit-scrollbar{display:none}
   <div class="mainbox">
     <div class="cbox" id="mainChart"></div>
     <div class="legend" id="legendBox"><span id="legendInfo">Iniciando…</span></div>
-    <a class="attr" href="https://www.tradingview.com/" target="_blank" rel="noopener">Gráficos: TradingView Lightweight Charts™</a>
     <div class="overlay hidden" id="loadingOverlay">
       <div class="spin"></div>
       <div>Cargando datos… <span id="timerCount">0.0s</span></div>
@@ -173,12 +177,20 @@ footer::-webkit-scrollbar{display:none}
   <div class="panel hidden" id="atrPanel"><span class="plabel">ATR (14)</span><div class="cbox"></div></div>
 </main>
 
-<!-- Modal Configuración Servidor -->
+<!-- Modal Configuración Servidor / Fuente -->
 <div class="modal-backdrop hidden" id="configModal">
   <div class="modal">
-    <h3>⚙️ Configuración del Servidor</h3>
-    <p>Introduce la IP o dirección URL de tu servidor FastAPI (ej. <code>192.168.1.50:8080</code> o <code>http://localhost:8080</code>):</p>
-    <input type="text" id="serverUrlInput" placeholder="http://192.168.1.50:8080" autocomplete="off" spellcheck="false">
+    <h3>⚙️ Configuración de Datos</h3>
+    <label>Fuente de datos:
+      <select id="dataSourceSelect">
+        <option value="server">Servidor API Privado (FastAPI / ZeroTier)</option>
+        <option value="stooq">Datos Gratuitos Públicos (Stooq - Sin servidor)</option>
+      </select>
+    </label>
+    <div id="serverUrlContainer">
+      <p>URL del servidor FastAPI (ej. <code>http://192.168.191.1:8080</code>):</p>
+      <input type="text" id="serverUrlInput" placeholder="http://192.168.191.1:8080" autocomplete="off" spellcheck="false">
+    </div>
     <div class="modal-actions">
       <button type="button" class="btn-sec" id="btnCancelConfig">Cancelar</button>
       <button type="button" class="btn-pri" id="btnSaveConfig">Guardar y Reintentar</button>
@@ -186,7 +198,30 @@ footer::-webkit-scrollbar{display:none}
   </div>
 </div>
 
+<!-- Modal Niveles de opciones (Estrategia Cava) -->
+<div class="modal-backdrop hidden" id="cavaModal">
+  <div class="modal">
+    <h3>🎯 Niveles de opciones · Cava</h3>
+    <p id="cavaModalTicker"></p>
+    <p>Niveles del día (Call/Put Wall, Zero Gamma, strike de máximo interés). Deja vacío lo que no uses. Solo se evalúan en las últimas velas del gráfico.</p>
+    <div class="cava-grid">
+      <label>Call Wall<input id="cavaCW" type="number" inputmode="decimal" step="any"></label>
+      <label>Put Wall<input id="cavaPW" type="number" inputmode="decimal" step="any"></label>
+      <label>Zero Gamma<input id="cavaZG" type="number" inputmode="decimal" step="any"></label>
+      <label>Strike máx. interés<input id="cavaOI" type="number" inputmode="decimal" step="any"></label>
+    </div>
+    <label>Capital (opcional, para calcular tamaño de posición)<input id="cavaEquity" type="number" inputmode="decimal" step="any"></label>
+    <div class="modal-actions">
+      <button type="button" class="btn-sec" id="btnCavaClear">Borrar niveles</button>
+      <button type="button" class="btn-sec" id="btnCavaCancel">Cancelar</button>
+      <button type="button" class="btn-pri" id="btnCavaSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <footer>
+  <button class="pill ind-btn" data-indicator="cava">Cava: Fallo MACD</button>
+  <button class="pill" id="btnCavaOpt" title="Niveles de opciones / gamma del día">Cava: Niveles opciones</button>
   <button class="pill ind-btn" data-indicator="bollinger">Bollinger</button>
   <button class="pill ind-btn" data-indicator="frama">FRAMA HeikenAshi + BB</button>
   <button class="pill ind-btn" data-indicator="fibonacci">Fibonacci Auto</button>
@@ -205,7 +240,7 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.3-CustomIP';
+const APP_VERSION = 'v3.6-FreeData';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
@@ -213,6 +248,7 @@ const CACHE_TTL_MS = 4 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 10000;
 const PINNED_KEY = 'av_pinned_asset';
 const SERVER_URL_KEY = 'av_custom_server_url';
+const DATA_SOURCE_KEY = 'av_data_source';
 
 const $ = id => document.getElementById(id);
 const legend = $('legendInfo');
@@ -226,10 +262,10 @@ function setLegend(text, isError) {
   legend.textContent = text;
   legendBox.classList.toggle('err', !!isError);
 }
-function flash(text) {
+function flash(text, ms = 2500) {
   clearTimeout(flashTimer);
   legend.textContent = text;
-  flashTimer = setTimeout(() => { legend.textContent = legendBase; }, 2500);
+  flashTimer = setTimeout(() => { legend.textContent = legendBase; }, ms);
 }
 
 window.addEventListener('error', e => setLegend('Error: ' + e.message, true));
@@ -244,8 +280,7 @@ let timerInterval = null;
 function startTimer() {
   stopTimer();
   const t0 = Date.now();
-  $('timerCount').textContent = '0.0s';
-  $('loadingOverlay').classList.remove('hidden');
+  $('timerCount').textContent = '0.0s';$('loadingOverlay').classList.remove('hidden');
   timerInterval = setInterval(() => {
     $('timerCount').textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
   }, 100);
@@ -257,7 +292,7 @@ function stopTimer() {
 }
 
 /* ================================================================
-   CONFIGURACIÓN DE SERVIDOR API
+   CONFIGURACIÓN DE FUENTE Y SERVIDOR API
    ================================================================ */
 function getSavedServerUrl() {
   let url = localStorage.getItem(SERVER_URL_KEY);
@@ -270,32 +305,51 @@ function getSavedServerUrl() {
 }
 
 function openConfigModal() {
-  const current = localStorage.getItem(SERVER_URL_KEY) || 'http://192.168.1.50:8080';
-  $('serverUrlInput').value = current;
+  const currentSource = localStorage.getItem(DATA_SOURCE_KEY) || 'server';
+  $('dataSourceSelect').value = currentSource;
+
+  const currentUrl = localStorage.getItem(SERVER_URL_KEY) || 'http://192.168.191.1:8080';
+  $('serverUrlInput').value = currentUrl;
+
+  toggleServerInputVisibility(currentSource);
   $('configModal').classList.remove('hidden');
-  $('serverUrlInput').focus();
 }
 
 function closeConfigModal() {
   $('configModal').classList.add('hidden');
 }
 
-$('btnConfig').addEventListener('click', openConfigModal);
-$('btnCancelConfig').addEventListener('click', closeConfigModal);
+function toggleServerInputVisibility(source) {
+  $('serverUrlContainer').style.display = (source === 'stooq') ? 'none' : 'block';
+}
+
+$('dataSourceSelect').addEventListener('change', e => {
+  toggleServerInputVisibility(e.target.value);
+});
+
+$('btnConfig').addEventListener('click', openConfigModal);$('btnCancelConfig').addEventListener('click', closeConfigModal);
 
 $('btnSaveConfig').addEventListener('click', () => {
-  let val = $('serverUrlInput').value.trim();
-  if (!val) {
-    alert('Por favor, introduce una dirección IP o URL válida.');
-    return;
+  const source = $('dataSourceSelect').value;
+  localStorage.setItem(DATA_SOURCE_KEY, source);
+
+  if (source === 'server') {
+    let val = $('serverUrlInput').value.trim();
+    if (!val) {
+      alert('Por favor, introduce una dirección IP o URL válida para el servidor.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(val)) {
+      val = 'http://' + val;
+    }
+    val = val.replace(/\/+$/, '');
+    localStorage.setItem(SERVER_URL_KEY, val);
+    flash('Servidor privado actualizado: ' + val);
+  } else {
+    flash('Fuente configurada: Datos Gratuitos Públicos (Stooq)');
   }
-  if (!/^https?:\/\//i.test(val)) {
-    val = 'http://' + val;
-  }
-  val = val.replace(/\/+$/, '');
-  localStorage.setItem(SERVER_URL_KEY, val);
+
   closeConfigModal();
-  flash('Servidor actualizado: ' + val);
   updateChart(true);
 });
 
@@ -539,7 +593,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Conexión con Servidor Configurable
+   DATOS: Conexión Servidor API o Stooq (Datos Gratuitos)
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -548,47 +602,118 @@ function cacheSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
-async function getMarketData(ticker, force) {
-  const baseUrl = getSavedServerUrl();
-  if (!baseUrl) {
-    openConfigModal();
-    throw new Error('Configura la dirección de tu servidor API con el botón ⚙️ Servidor');
+async function getStooqData(ticker) {
+  let sym = ticker.toLowerCase().trim();
+  if (!sym.includes('.')) {
+    sym += '.us'; // por defecto acciones EE.UU. si no se especifica extensión (ej: aapl.us)
   }
-
-  const key = 'custom_mkt_' + ticker;
-  const cached = cacheGet(key);
-  if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
-    return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: 'EQUITY', source: 'caché local' };
-  }
-
-  const sym = ticker.toUpperCase().trim();
-  const url = `${baseUrl}/ticker/${encodeURIComponent(sym)}`;
-
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`;
+  
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
 
   try {
     const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.detail || ('Error HTTP ' + res.status));
+    if (!res.ok) throw new Error('Error al conectar con el servicio gratuito de Stooq');
+    const text = await res.text();
+    
+    if (text.includes('Przekroczono limit') || text.trim() === 'Date,Open,High,Low,Close,Volume' || text.length < 50) {
+      throw new Error('Símbolo no encontrado o límite excedido en Stooq. Prueba con sufijo (ej: aapl.us).');
     }
-    const data = await res.json();
-    if (!data.bars || data.bars.length < 2) {
-      throw new Error('Sin datos suficientes para ' + sym);
+
+    const lines = text.trim().split('\n');
+    const bars = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(',');
+      if (parts.length < 6) continue;
+      const [date, open, high, low, close, volume] = parts;
+      const cl = parseFloat(close);
+      if (date && !isNaN(cl)) {
+        bars.push({
+          time: date, // Lightweight Charts acepta cadenas 'YYYY-MM-DD'
+          open: parseFloat(open),
+          high: parseFloat(high),
+          low: parseFloat(low),
+          close: cl,
+          volume: parseFloat(volume) || 0
+        });
+      }
     }
-    cacheSet(key, { bars: data.bars, currency: data.currency, name: sym, ts: Date.now() });
-    return { bars: data.bars, currency: data.currency, name: sym, source: 'Servidor API (' + baseUrl + ')' };
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error('Tiempo agotado al conectar con ' + baseUrl + '. Comprueba la IP y que Uvicorn esté en ejecución.');
-    }
-    if (cached && cached.bars && cached.bars.length) {
-      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', source: 'caché previa' };
-    }
-    throw new Error(err.message || ('No se pudo conectar con el servidor: ' + baseUrl));
+
+    if (bars.length < 2) throw new Error('Sin datos históricos suficientes para ' + ticker);
+    return { bars, currency: 'USD', name: ticker.toUpperCase(), source: 'Stooq (Gratuito)' };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function getMarketData(ticker, force) {
+  const dataSource = localStorage.getItem(DATA_SOURCE_KEY) || 'server';
+
+  if (dataSource === 'stooq') {
+    const key = 'stooq_mkt_' + ticker;
+    const cached = cacheGet(key);
+    if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
+      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', source: 'caché local (Stooq)' };
+    }
+    const data = await getStooqData(ticker);
+    cacheSet(key, { bars: data.bars, currency: data.currency, name: data.name, ts: Date.now() });
+    return data;
+  } else {
+    const baseUrl = getSavedServerUrl();
+    if (!baseUrl) {
+      openConfigModal();
+      throw new Error('Configura tu servidor API o selecciona Datos Gratuitos en el botón ⚙️ Servidor');
+    }
+
+    const key = 'custom_mkt_' + ticker;
+    const cached = cacheGet(key);
+    if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
+      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', type: 'EQUITY', source: 'caché local' };
+    }
+
+    const sym = ticker.toUpperCase().trim();
+    const url = `${baseUrl}/ticker/${encodeURIComponent(sym)}`;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || ('Error HTTP ' + res.status));
+      }
+      const data = await res.json();
+      
+      const rawHistory = data.history || data.bars;
+      if (!rawHistory || rawHistory.length < 2) {
+        throw new Error('Sin datos suficientes para ' + sym);
+      }
+
+      const bars = rawHistory.map(item => ({
+        time: item.timestamp || item.time,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+        volume: item.volume
+      }));
+
+      const currency = data.currency || 'USD';
+      cacheSet(key, { bars: bars, currency: currency, name: sym, ts: Date.now() });
+      return { bars: bars, currency: currency, name: sym, source: 'Servidor API Privado' };
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error('Tiempo agotado al conectar con ' + baseUrl + '.');
+      }
+      if (cached && cached.bars && cached.bars.length) {
+        return { bars: cached.bars, currency: cached.currency, name: cached.name || '', source: 'caché previa' };
+      }
+      throw new Error(err.message || ('No se pudo conectar con el servidor: ' + baseUrl));
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -704,7 +829,7 @@ syncList.forEach(src => {
 /* ================================================================
    ESTADO Y RENDER
    ================================================================ */
-const state = { comparing: false, base100: false, active: new Set(), bars: [], reqId: 0 };
+const state = { comparing: false, base100: false, active: new Set(), bars: [], reqId: 0, ticker: '', baseLegend: '', cava: null };
 let fibLines = [];
 
 const toLine = (bars, vals) => bars.map((b, i) =>
@@ -742,6 +867,281 @@ function drawFib(bars) {
   });
 }
 
+/* ================================================================
+   ESTRATEGIA JOSÉ LUIS CAVA
+   ================================================================ */
+const CAVA = {
+  pivotK: 3,
+  minGap: 5,
+  maxGap: 60,
+  impulseATR: 3,
+  zoneATR: 0.5,
+  touchATR: 0.75,
+  stopATR: 0.1,
+  rr: 2,
+  riskA: 1.5,
+  riskStd: 0.75,
+  openWindowMin: 90,
+  gammaBars: 3,
+  maxOrigins: 2,
+};
+const CAVA_EQ_KEY = 'cava_equity';
+const optKey = t => 'cava_opt_' + t;
+const loadOpt = t => (t && cacheGet(optKey(t))) || {};
+let cavaLines = [];
+
+function swingPivots(bars, k) {
+  const hi = [], lo = [];
+  for (let i = k; i < bars.length - k; i++) {
+    let isH = true, isL = true;
+    for (let j = 1; j <= k; j++) {
+      if (bars[i].high <= bars[i - j].high || bars[i].high < bars[i + j].high) isH = false;
+      if (bars[i].low >= bars[i - j].low || bars[i].low > bars[i + j].low) isL = false;
+    }
+    if (isH) hi.push(i);
+    if (isL) lo.push(i);
+  }
+  return { hi, lo };
+}
+
+function impulseOrigins(bars, A, mult) {
+  const lows = [], highs = [];
+  let dir = 0, hiP = bars[0].high, hiI = 0, loP = bars[0].low, loI = 0;
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i], a = A[i];
+    if (dir === 0) {
+      if (b.high > hiP) { hiP = b.high; hiI = i; }
+      if (b.low < loP) { loP = b.low; loI = i; }
+      if (a != null && hiP - loP >= mult * a) {
+        if (hiI > loI) { lows.push({ idx: loI, price: loP, conf: i }); dir = 1; }
+        else { highs.push({ idx: hiI, price: hiP, conf: i }); dir = -1; }
+      }
+    } else if (dir === 1) {
+      if (b.high > hiP) { hiP = b.high; hiI = i; }
+      else if (a != null && hiP - b.low >= mult * a) {
+        highs.push({ idx: hiI, price: hiP, conf: i });
+        dir = -1; loP = b.low; loI = i;
+      }
+    } else {
+      if (b.low < loP) { loP = b.low; loI = i; }
+      else if (a != null && b.high - loP >= mult * a) {
+        lows.push({ idx: loI, price: loP, conf: i });
+        dir = 1; hiP = b.high; hiI = i;
+      }
+    }
+  }
+  return { lows, highs };
+}
+
+function reactTo(side, pivotPrice, closeRef, level, tol, atrv) {
+  const d = side > 0 ? pivotPrice - level : level - pivotPrice;
+  if (Math.abs(d) <= tol) return { hit: true, sweep: false };
+  const back = side > 0 ? closeRef > level : closeRef < level;
+  if (d < 0 && d >= -2 * atrv && back) return { hit: true, sweep: true };
+  return { hit: false, sweep: false };
+}
+
+function winExt(arr, i, k, side) {
+  let v = null;
+  for (let j = i - k; j <= i + k; j++) {
+    const x = arr[j];
+    if (x == null) return null;
+    if (v == null || (side > 0 ? x < v : x > v)) v = x;
+  }
+  return v;
+}
+
+function cavaCompute(bars) {
+  const n = bars.length, K = CAVA.pivotK;
+  const out = { sigs: [], origins: { lows: [], highs: [] }, stats: null };
+  if (n < 60) return out;
+  const closes = bars.map(b => b.close);
+  const m = macd(closes), A = atr(bars, 14);
+  const piv = swingPivots(bars, K);
+  const org = impulseOrigins(bars, A, CAVA.impulseATR);
+  out.origins = { lows: org.lows.slice(-CAVA.maxOrigins), highs: org.highs.slice(-CAVA.maxOrigins) };
+
+  const opt = loadOpt(state.ticker);
+  const levels = [['Call Wall', opt.cw], ['Put Wall', opt.pw], ['Zero Gamma', opt.zg], ['Strike OI', opt.oi]]
+    .filter(l => Number.isFinite(l[1]));
+  const equity = Number(localStorage.getItem(CAVA_EQ_KEY)) || 0;
+  
+  // Soporte para fechas en formato string (Stooq YYYY-MM-DD) o timestamps numéricos
+  const isStringTime = typeof bars[0].time === 'string';
+  const dayFirst = {};
+  if (!isStringTime) {
+    bars.forEach(b => { const d = Math.floor(b.time / 86400); if (dayFirst[d] == null) dayFirst[d] = b.time; });
+  }
+
+  const scan = (side, idxs) => {
+    for (let a = 1; a < idxs.length; a++) {
+      const i1 = idxs[a], i0 = idxs[a - 1], t = i1 + K, gap = i1 - i0;
+      if (t >= n || gap < CAVA.minGap || gap > CAVA.maxGap) continue;
+      const at = A[t], a1 = A[i1];
+      if (at == null || a1 == null) continue;
+      const p1 = side > 0 ? bars[i1].low : bars[i1].high;
+      const p0 = side > 0 ? bars[i0].low : bars[i0].high;
+      if (side > 0 ? p1 > p0 + 0.1 * a1 : p1 < p0 - 0.1 * a1) continue;
+      const l1 = winExt(m.line, i1, K, side), l0 = winExt(m.line, i0, K, side);
+      const h1 = winExt(m.hist, i1, K, side), h0 = winExt(m.hist, i0, K, side);
+      if (l1 == null || l0 == null || h1 == null || h0 == null) continue;
+      const fail = side > 0 ? (l1 > l0 || h1 > h0) : (l1 < l0 || h1 < h0);
+      if (!fail) continue;
+
+      const tol = CAVA.touchATR * a1;
+      let origin = null;
+      const pool = (side > 0 ? org.lows : org.highs).filter(o => o.conf <= t && o.idx < i1 - 1).slice(-CAVA.maxOrigins).reverse();
+      for (const o of pool) {
+        const r = reactTo(side, p1, closes[t], o.price, tol, a1);
+        if (r.hit) { origin = { price: o.price, sweep: r.sweep }; break; }
+      }
+      let optHit = null;
+      if (t >= n - CAVA.gammaBars) {
+        for (const [nm, lv] of levels) {
+          const r = reactTo(side, p1, closes[t], lv, tol, a1);
+          if (r.hit) { optHit = { name: nm, price: lv, sweep: r.sweep }; break; }
+        }
+      }
+      if (!origin && !optHit) continue;
+
+      const cls = origin && optHit ? 'A+' : 'STD';
+      const entry = closes[t];
+      const stop = side > 0 ? p1 - CAVA.stopATR * at : p1 + CAVA.stopATR * at;
+      const risk = Math.abs(entry - stop);
+      if (!(risk > 0)) continue;
+      const tp = entry + side * CAVA.rr * risk;
+      const riskPct = cls === 'A+' ? CAVA.riskA : CAVA.riskStd;
+      const units = equity > 0 ? (equity * riskPct / 100) / risk : null;
+      
+      let opening = false;
+      if (!isStringTime) {
+        opening = (bars[t].time - dayFirst[Math.floor(bars[t].time / 86400)]) / 60 <= CAVA.openWindowMin;
+      }
+
+      let res = 'open';
+      for (let j = t + 1; j < n; j++) {
+        const b = bars[j];
+        if (side > 0 ? b.low <= stop : b.high >= stop) { res = 'SL'; break; }
+        if (side > 0 ? b.high >= tp : b.low <= tp) { res = 'TP'; break; }
+      }
+      out.sigs.push({ side, t, cls, entry, stop, tp, riskPct, units, opening, res,
+        origin, optHit, sweep: !!((origin && origin.sweep) || (optHit && optHit.sweep)) });
+    }
+  };
+  scan(1, piv.lo);
+  scan(-1, piv.hi);
+  out.sigs.sort((x, y) => x.t - y.t);
+
+  const closed = out.sigs.filter(x => x.res !== 'open');
+  const wins = closed.filter(x => x.res === 'TP').length;
+  out.stats = {
+    total: out.sigs.length, aplus: out.sigs.filter(x => x.cls === 'A+').length,
+    closed: closed.length, wins,
+    winRate: closed.length ? wins / closed.length * 100 : null,
+    avgR: closed.length ? (wins * CAVA.rr - (closed.length - wins)) / closed.length : null,
+  };
+  return out;
+}
+
+function clearCavaLines() {
+  cavaLines.forEach(l => { try { mainSeries.removePriceLine(l); } catch {} });
+  cavaLines = [];
+}
+function addCavaLine(price, color, title, width = 1, style = dash) {
+  cavaLines.push(mainSeries.createPriceLine({ price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title }));
+}
+
+function drawCava(bars, c) {
+  clearCavaLines();
+  const dot = CT.LineStyle.Dotted;
+  c.origins.lows.forEach(o => addCavaLine(o.price, 'rgba(34,197,94,0.8)', 'Origen ▲', 1, dot));
+  c.origins.highs.forEach(o => addCavaLine(o.price, 'rgba(239,68,68,0.8)', 'Origen ▼', 1, dot));
+
+  const o = loadOpt(state.ticker);
+  if (Number.isFinite(o.cw)) addCavaLine(o.cw, '#f87171', 'Call Wall', 2);
+  if (Number.isFinite(o.pw)) addCavaLine(o.pw, '#4ade80', 'Put Wall', 2);
+  if (Number.isFinite(o.zg)) addCavaLine(o.zg, '#fbbf24', 'Zero Gamma', 2, CT.LineStyle.Solid);
+  if (Number.isFinite(o.oi)) addCavaLine(o.oi, '#a78bfa', 'Strike OI', 1);
+
+  const last = c.sigs[c.sigs.length - 1];
+  if (last && last.res === 'open') {
+    addCavaLine(last.entry, '#e2e8f0', 'Entrada', 1, CT.LineStyle.Solid);
+    addCavaLine(last.stop, '#ef4444', 'SL', 1, CT.LineStyle.Solid);
+    addCavaLine(last.tp, '#22c55e', 'TP ' + CAVA.rr + 'R', 1, CT.LineStyle.Solid);
+  }
+  mainSeries.setMarkers(c.sigs.map(s => ({
+    time: bars[s.t].time,
+    position: s.side > 0 ? 'belowBar' : 'aboveBar',
+    color: s.side > 0 ? '#4ade80' : '#f87171',
+    shape: s.side > 0 ? 'arrowUp' : 'arrowDown',
+    size: s.cls === 'A+' ? 2 : 1,
+    text: (s.side > 0 ? 'BUY ' : 'SELL ') + s.cls + (s.sweep ? ' S' : '') + (s.opening ? ' AP' : ''),
+  })));
+}
+
+function cavaInfo() {
+  if (state.comparing || !state.active.has('cava') || !state.cava || !state.bars.length) return '';
+  const c = state.cava, st = c.stats, o = loadOpt(state.ticker), parts = [];
+  const lastClose = state.bars[state.bars.length - 1].close;
+  const hasLv = ['cw', 'pw', 'zg', 'oi'].some(k => Number.isFinite(o[k]));
+  if (Number.isFinite(o.zg)) parts.push(lastClose < o.zg ? 'Bajo Zero Gamma: dealers venden (volatilidad ↑)' : 'Sobre Zero Gamma: dealers compran (estabiliza)');
+  if (!hasLv) parts.push('sin niveles de opciones: no hay señales A+');
+  else if (o.date && o.date !== new Date().toISOString().slice(0, 10)) parts.push('⚠ niveles del ' + o.date);
+  let s = `Cava: ${st.total} señales (${st.aplus} A+)`;
+  if (st.closed) s += ` · ${st.closed} cerradas: ${st.winRate.toFixed(0)}% aciertos, ${st.avgR >= 0 ? '+' : ''}${st.avgR.toFixed(2)}R medio`;
+  parts.push(s);
+  return parts.join(' · ');
+}
+
+function refreshLegend() {
+  if (!state.bars.length || !state.baseLegend) return;
+  const extra = cavaInfo();
+  setLegend(extra ? state.baseLegend + ' · ' + extra : state.baseLegend);
+}
+
+const timeKey = t => (t && typeof t === 'object')
+  ? `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : t;
+
+mainChart.subscribeClick(param => {
+  if (!state.cava || !param || param.time == null) return;
+  const key = timeKey(param.time);
+  const s = state.cava.sigs.find(x => timeKey(state.bars[x.t].time) === key);
+  if (!s) return;
+  const f = fmt;
+  const why = [ 'Fallo MACD', s.origin && ('Origen ' + f(s.origin.price)), s.optHit && (s.optHit.name + ' ' + f(s.optHit.price)),
+    s.sweep && 'barrido', s.opening && 'apertura' ].filter(Boolean).join(' + ');
+  flash(`${s.side > 0 ? 'BUY' : 'SELL'} ${s.cls} [${why}] · Entrada ${f(s.entry)} · SL ${f(s.stop)} · TP ${f(s.tp)} (${CAVA.rr}R) · Riesgo ${s.riskPct}%`
+    + (s.units ? ` · ${s.units.toFixed(2)} uds` : '') + ` · Resultado: ${s.res === 'open' ? 'abierta' : s.res}`, 7000);
+});
+
+const numOrNull = v => { const x = parseFloat(String(v).replace(',', '.')); return Number.isFinite(x) ? x : null; };
+$('btnCavaOpt').addEventListener('click', () => {
+  if (!state.ticker) { flash('Carga primero un activo para asignarle niveles.'); return; }
+  const o = loadOpt(state.ticker);
+  $('cavaModalTicker').textContent = 'Activo: ' + state.ticker + (o.date ? ' · guardado el ' + o.date : '');
+  $('cavaCW').value = o.cw ?? ''; $('cavaPW').value = o.pw ?? '';
+  $('cavaZG').value = o.zg ?? ''; $('cavaOI').value = o.oi ?? '';
+  $('cavaEquity').value = localStorage.getItem(CAVA_EQ_KEY) || '';
+  $('cavaModal').classList.remove('hidden');
+});
+$('btnCavaCancel').addEventListener('click', () => $('cavaModal').classList.add('hidden'));
+$('btnCavaClear').addEventListener('click', () => {
+  try { localStorage.removeItem(optKey(state.ticker)); } catch {}
+  $('cavaModal').classList.add('hidden');
+  recalc(); refreshLegend();
+});
+$('btnCavaSave').addEventListener('click', () => {
+  const o = { cw: numOrNull($('cavaCW').value), pw: numOrNull($('cavaPW').value),
+              zg: numOrNull($('cavaZG').value), oi: numOrNull($('cavaOI').value),
+              date: new Date().toISOString().slice(0, 10) };
+  cacheSet(optKey(state.ticker), o);
+  const eq = numOrNull($('cavaEquity').value);
+  try { if (eq) localStorage.setItem(CAVA_EQ_KEY, String(eq)); else localStorage.removeItem(CAVA_EQ_KEY); } catch {}
+  $('cavaModal').classList.add('hidden');
+  if (!state.active.has('cava')) flash('Niveles guardados. Activa "Cava: Fallo MACD" para verlos.');
+  recalc(); refreshLegend();
+});
+
 function setPanel(key, show) { subs[key].panel.classList.toggle('hidden', !show); }
 
 function recalc() {
@@ -774,6 +1174,15 @@ function recalc() {
 
   clearFib();
   if (on('fibonacci')) drawFib(bars.slice(-VISIBLE_BARS));
+
+  clearCavaLines();
+  if (on('cava')) {
+    state.cava = cavaCompute(bars);
+    drawCava(bars, state.cava);
+  } else {
+    state.cava = null;
+    mainSeries.setMarkers([]);
+  }
 
   const showRsi = on('rsi');
   setPanel('rsi', showRsi);
@@ -810,6 +1219,8 @@ function recalc() {
 
 function clearAll() {
   state.bars = [];
+  state.ticker = '';
+  state.baseLegend = '';
   mainSeries.setData([]); line1.setData([]); line2.setData([]);
   recalc();
 }
@@ -822,13 +1233,15 @@ function showRecent(n) {
 
 function renderSingle(d, t) {
   state.bars = d.bars;
+  state.ticker = t;
   line1.setData([]); line2.setData([]);
   const last = d.bars[d.bars.length - 1];
   applyPrecision(last.close);
   mainSeries.setData(d.bars);
   recalc();
   showRecent(d.bars.length);
-  setLegend(`${t}: ${fmt(last.close)} ${d.currency} · ${last.time} · Fuente: ${d.source}`);
+  state.baseLegend = `${t}: ${fmt(last.close)} ${d.currency} · ${last.time} · Fuente: ${d.source}`;
+  refreshLegend();
 }
 
 function renderCompare(d1, t1, d2, t2) {
@@ -866,12 +1279,9 @@ async function resolveSymbol(raw, input) {
   throw new Error('Símbolo inválido. Usa tickers estándar (ej: TSLA, AAPL, MSFT).');
 }
 
-/* ================================================================
-   EVENTOS DE BÚSQUEDA Y UI
-   ================================================================ */
 async function updateChart(force = false) {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  const in1 = $('inputAsset1'), in2 =$('inputAsset2');
+  const in1 = $('inputAsset1'), in2 = $('inputAsset2');
   const raw1 = in1.value.trim(), raw2 = in2.value.trim();
   const my = ++state.reqId;
 
@@ -910,7 +1320,6 @@ async function updateChart(force = false) {
 
 $('searchForm').addEventListener('submit', e => { e.preventDefault(); updateChart(); });
 
-/* --- Gestión de anclaje (Pin) --- */
 const btnPin = $('btnPin');
 function checkPinState() {
   const currentVal = $('inputAsset1').value.trim().toUpperCase();
@@ -952,7 +1361,7 @@ $('btnToggleCompare').addEventListener('click', e => {
   $('compareRow').classList.toggle('hidden', !state.comparing);
   if (!state.comparing) {
     state.base100 = false;
-    $('btnBase100').textContent = 'Base 100: OFF';$('btnBase100').classList.remove('on');
+    $('btnBase100').textContent = 'Base 100: OFF'; $('btnBase100').classList.remove('on');
     line1.setData([]); line2.setData([]);
   }
   fitters.forEach(fit);
@@ -975,12 +1384,10 @@ document.querySelectorAll('.ind-btn').forEach(btn => {
     if (state.active.has(k)) state.active.delete(k); else state.active.add(k);
     btn.classList.toggle('on', state.active.has(k));
     recalc();
+    if (k === 'cava') refreshLegend();
   });
 });
 
-/* ================================================================
-   ARRANQUE
-   ================================================================ */
 fitters.forEach(fit);
 
 const pinnedAsset = localStorage.getItem(PINNED_KEY);
