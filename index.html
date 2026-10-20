@@ -26,7 +26,7 @@ body{
 button{font-family:inherit; user-select:none; -webkit-user-select:none}
 .hidden{display:none !important}
 
-/* Ocultar completamente cualquier logo/marca de agua remanente */
+/* Ocultar marcas de agua o logos remanentes */
 div[class*="tv-lightweight-charts"] a, 
 a[href*="tradingview"] {
   display: none !important;
@@ -143,7 +143,7 @@ footer::-webkit-scrollbar{display:none}
   <div class="header-top">
     <span>📈 Graficador Bursátil Pro</span>
     <div class="header-badges">
-      <span class="version-tag" id="appVersionLabel">v3.7-FreeDataProxy</span>
+      <span class="version-tag" id="appVersionLabel">v3.8-FreeDataYahoo</span>
       <button type="button" id="btnConfig" class="btn-icon" title="Configurar Fuente de Datos">⚙️ Servidor</button>
     </div>
   </div>
@@ -192,7 +192,7 @@ footer::-webkit-scrollbar{display:none}
     <h3>⚙️ Configuración de Datos</h3>
     <label>Fuente de datos:
       <select id="dataSourceSelect">
-        <option value="stooq">Datos Gratuitos Públicos (Stooq - Sin servidor)</option>
+        <option value="free">Datos Gratuitos Directos (Yahoo / Sin servidor)</option>
         <option value="server">Servidor API Privado (FastAPI / ZeroTier)</option>
       </select>
     </label>
@@ -249,7 +249,7 @@ footer::-webkit-scrollbar{display:none}
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.7-FreeDataProxy';
+const APP_VERSION = 'v3.8-FreeDataYahoo';
 console.log('🚀 Ejecutando Graficador Bursátil - Versión:', APP_VERSION);
 
 const VISIBLE_BARS = 250;
@@ -314,7 +314,7 @@ function getSavedServerUrl() {
 }
 
 function openConfigModal() {
-  const currentSource = localStorage.getItem(DATA_SOURCE_KEY) || 'stooq';
+  const currentSource = localStorage.getItem(DATA_SOURCE_KEY) || 'free';
   $('dataSourceSelect').value = currentSource;
 
   const currentUrl = localStorage.getItem(SERVER_URL_KEY) || 'http://192.168.191.1:8080';
@@ -329,7 +329,7 @@ function closeConfigModal() {
 }
 
 function toggleServerInputVisibility(source) {
-  $('serverUrlContainer').style.display = (source === 'stooq') ? 'none' : 'block';
+  $('serverUrlContainer').style.display = (source === 'free') ? 'none' : 'block';
 }
 
 $('dataSourceSelect').addEventListener('change', e => {
@@ -355,7 +355,7 @@ $('btnSaveConfig').addEventListener('click', () => {
     localStorage.setItem(SERVER_URL_KEY, val);
     flash('Servidor privado actualizado: ' + val);
   } else {
-    flash('Fuente configurada: Datos Gratuitos Públicos (Stooq)');
+    flash('Fuente configurada: Datos Gratuitos Directos (Yahoo)');
   }
 
   closeConfigModal();
@@ -602,7 +602,7 @@ function parabolicSar(bars, step = 0.02, max = 0.2) {
 }
 
 /* ================================================================
-   DATOS: Conexión Servidor API o Stooq (Proxy CORS Integrado)
+   DATOS: Conexión Servidor API o Yahoo Finance Directo
    ================================================================ */
 function cacheGet(key) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -611,67 +611,64 @@ function cacheSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
-async function getStooqData(ticker) {
-  let sym = ticker.toLowerCase().trim();
-  if (!sym.includes('.')) {
-    sym += '.us'; // por defecto EE.UU.
-  }
-  const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`;
-  
-  const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(targetUrl);
-  const fallbackProxy = `https://api.allorigins.win/raw?url=` + encodeURIComponent(targetUrl);
-  
+async function getYahooData(ticker) {
+  const sym = ticker.toUpperCase().trim();
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2y`;
+
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    let res = await fetch(proxyUrl, { signal: ctrl.signal }).catch(() => null);
-    if (!res || !res.ok) {
-      res = await fetch(fallbackProxy, { signal: ctrl.signal });
-    }
-    if (!res.ok) throw new Error('Error al conectar con el servicio gratuito');
-    const text = await res.text();
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error('No se pudo obtener el activo ' + sym);
+    const json = await res.json();
     
-    if (text.includes('Przekroczono limit') || text.trim() === 'Date,Open,High,Low,Close,Volume' || text.length < 50) {
-      throw new Error('Símbolo no encontrado o límite alcanzado. Prueba con sufijo (ej: aapl.us).');
-    }
+    const result = json.chart && json.chart.result && json.chart.result[0];
+    if (!result) throw new Error('Simbolo ' + sym + ' no encontrado');
 
-    const lines = text.trim().split('\n');
+    const timestamps = result.timestamp;
+    const quotes = result.indicators.quote[0];
+    const currency = result.meta.currency || 'USD';
+
+    if (!timestamps || !quotes) throw new Error('Sin datos históricos para ' + sym);
+
     const bars = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split(',');
-      if (parts.length < 6) continue;
-      const [date, open, high, low, close, volume] = parts;
-      const cl = parseFloat(close);
-      if (date && !isNaN(cl)) {
+    for (let i = 0; i < timestamps.length; i++) {
+      if (quotes.open[i] != null && quotes.close[i] != null) {
+        // Convertir Unix timestamp a formato YYYY-MM-DD
+        const d = new Date(timestamps[i] * 1000);
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        
         bars.push({
-          time: date,
-          open: parseFloat(open),
-          high: parseFloat(high),
-          low: parseFloat(low),
-          close: cl,
-          volume: parseFloat(volume) || 0
+          time: `${yyyy}-${mm}-${dd}`,
+          open: quotes.open[i],
+          high: quotes.high[i],
+          low: quotes.low[i],
+          close: quotes.close[i],
+          volume: quotes.volume[i] || 0
         });
       }
     }
 
-    if (bars.length < 2) throw new Error('Sin datos históricos suficientes para ' + ticker);
-    return { bars, currency: 'USD', name: ticker.toUpperCase(), source: 'Stooq (Gratuito)' };
+    if (bars.length < 2) throw new Error('Sin datos suficientes para ' + sym);
+    return { bars, currency, name: sym, source: 'Yahoo Finance (Gratuito)' };
   } finally {
     clearTimeout(timer);
   }
 }
 
 async function getMarketData(ticker, force) {
-  const dataSource = localStorage.getItem(DATA_SOURCE_KEY) || 'stooq';
+  const dataSource = localStorage.getItem(DATA_SOURCE_KEY) || 'free';
 
-  if (dataSource === 'stooq') {
-    const key = 'stooq_mkt_' + ticker;
+  if (dataSource === 'free') {
+    const key = 'free_mkt_' + ticker;
     const cached = cacheGet(key);
     if (!force && cached && cached.bars && Date.now() - cached.ts < CACHE_TTL_MS) {
-      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', source: 'caché local (Stooq)' };
+      return { bars: cached.bars, currency: cached.currency, name: cached.name || '', source: 'caché local' };
     }
-    const data = await getStooqData(ticker);
+    const data = await getYahooData(ticker);
     cacheSet(key, { bars: data.bars, currency: data.currency, name: data.name, ts: Date.now() });
     return data;
   } else {
@@ -1290,7 +1287,7 @@ async function resolveSymbol(raw, input) {
   if (input && input.dataset.picked && input.dataset.picked === raw) return raw;
   const up = raw.toUpperCase().trim();
   if (/^[A-Z0-9.\-]{1,15}$/.test(up)) return up;
-  throw new Error('Símbolo inválido. Usa tickers estándar (ej: TSLA, AAPL, MSFT).');
+  throw new Error('Símbolo inválido. Usa tickers estándar (ej: TSLA, AAPL, IBM).');
 }
 
 async function updateChart(force = false) {
@@ -1299,7 +1296,7 @@ async function updateChart(force = false) {
   const raw1 = in1.value.trim(), raw2 = in2.value.trim();
   const my = ++state.reqId;
 
-  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: TSLA, AAPL) o pulsa 📌 para cargar tu anclado'); stopTimer(); return; }
+  if (!raw1) { clearAll(); setLegend('Escribe un ticker (ej: IBM, TSLA, AAPL) o pulsa 📌 para cargar tu anclado'); stopTimer(); return; }
 
   startTimer();
   try {
@@ -1410,7 +1407,7 @@ if (pinnedAsset) {
   btnPin.classList.add('pinned');
   updateChart();
 } else {
-  setLegend('Escribe un ticker (ej: TSLA, AAPL) o ancla tu favorito con 📌');
+  setLegend('Escribe un ticker (ej: IBM, TSLA, AAPL) o ancla tu favorito con 📌');
 }
 checkPinState();
 </script>
